@@ -61,7 +61,7 @@ public class RobotMotors {
     }
 
     public void startIntake(){
-        intake.setPower(.6);
+        intake.setPower(1);
     }
 
     public void stopIntake(){
@@ -70,4 +70,3 @@ public class RobotMotors {
 
 
 }
-
