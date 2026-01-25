@@ -64,6 +64,7 @@ public class Decode_Teleop extends OpMode {
     public void init() {
         robotMotors.init(hardwareMap);
         robotServos.init(hardwareMap);
+        robotSensors.init(hardwareMap); // <-- Ensure color sensors are initialized
         follower = Constants.createFollower(hardwareMap);
         follower.setStartingPose(startingPose == null ? new Pose() : startingPose);
         follower.update();
@@ -74,6 +75,10 @@ public class Decode_Teleop extends OpMode {
     public void start() {
         follower.startTeleopDrive();
 
+    }
+
+    public void stop() {
+        robotServos.colorservo.setPosition(0);
     }
 
     @Override
@@ -131,9 +136,11 @@ public class Decode_Teleop extends OpMode {
         if(gamepad1.a && !prevAPressed){
             if(!intakeMode)
             {robotServos.turret_1.setPosition(intake_MIN_POSITION);
+                robotServos.colorservo.setPosition(1);
             intakeMode = true;}
             else{
                 robotServos.turret_1.setPosition(launch_MIN_POSITION);
+                robotServos.colorservo.setPosition(.38);
             intakeMode = false;}
         }
         prevAPressed = gamepad1.a;
@@ -199,16 +206,21 @@ public class Decode_Teleop extends OpMode {
 }
 
 
+        // Color sensor detection with comprehensive info (FTC best practices)
+        telemetry.addData("Color BR", robotSensors.getColorName(robotSensors.color_br));
+        telemetry.addData("BR Info", robotSensors.getSensorInfo(robotSensors.color_br));
+
+        telemetry.addData("Color BL", robotSensors.getColorName(robotSensors.color_bl));
+        telemetry.addData("BL Info", robotSensors.getSensorInfo(robotSensors.color_bl));
+
+        telemetry.addData("Color F", robotSensors.getColorName(robotSensors.color_f));
+        telemetry.addData("F Info", robotSensors.getSensorInfo(robotSensors.color_f));
+
         telemetry.addData("Turret Servo Position", launch_servoPosition);
         telemetry.addData("Mode", intakeMode);
         telemetry.addData("Shooter Target Velocity", targetShooterVelocity);
         telemetry.addData("Shooter Current Velocity", robotMotors.getShooterVelocity());
-        if (isshooterActive) {
-            boolean isReady = robotMotors.isShooterAtVelocity(targetShooterVelocity, 50);
-            telemetry.addData("Shooter Ready", isReady ? "YES ✓" : "Spinning up...");
-            double velocityError = targetShooterVelocity - robotMotors.getShooterVelocity();
-            telemetry.addData("Velocity Error", String.format("%.1f ticks/sec", velocityError));
-        }
+
         telemetry.update();
     }
 }
