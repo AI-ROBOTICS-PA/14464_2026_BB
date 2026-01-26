@@ -54,7 +54,7 @@ public class Decode_Teleop extends OpMode {
     private boolean rightBumped;
     private boolean rightBumped2;
     private boolean isshooterActive = false;
-    private double targetShooterVelocity = 1460; // Target velocity for shooter
+    private double targetShooterVelocity = 1500; // Target velocity for shooter
     private boolean isscanActive = false;
     private boolean iscatActive = false;
     private boolean leftBumped2;

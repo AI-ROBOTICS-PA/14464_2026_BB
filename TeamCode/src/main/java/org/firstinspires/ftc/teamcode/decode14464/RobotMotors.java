@@ -3,35 +3,39 @@ package org.firstinspires.ftc.teamcode.decode14464;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.HardwareMap;
+import com.qualcomm.robotcore.hardware.PIDFCoefficients;
 
 public class RobotMotors {
     public DcMotor intake = null;
-    public DcMotorEx shooter = null;  // Changed to DcMotorEx for velocity control
+    public DcMotorEx flywheelMotor = null;  // Changed to DcMotorEx for velocity control
     public DcMotorEx turret = null;
 
 
     public void init(HardwareMap hardwareMap) {
         intake = hardwareMap.get(DcMotor.class, "intake");
-        shooter = hardwareMap.get(DcMotorEx.class, "shooter");  // Use DcMotorEx for velocity control
+       // shooter = hardwareMap.get(DcMotorEx.class, "shooter");  // Use DcMotorEx for velocity control
         turret = hardwareMap.get(DcMotorEx.class, "turret");
+        // Initialize the flywheel motor (using your "shooter" motor)
+        flywheelMotor = hardwareMap.get(DcMotorEx.class, "shooter");
+        flywheelMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        flywheelMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        flywheelMotor.setDirection(DcMotor.Direction.FORWARD); // Change to REVERSE if needed
+        flywheelMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
+        // Set initial PIDF coefficients (P, I, D, F)
+        PIDFCoefficients pidfCoefficients = new PIDFCoefficients(300, 0, 0, 14.65);
+        flywheelMotor.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER, pidfCoefficients);
 
-        // Configure shooter for optimal velocity control
-        shooter.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        shooter.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-
-        // Use BRAKE mode to help motor recover velocity faster after shooting
-        shooter.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
         // Add drivetrain motor initialization here if needed
     }
 
     /**
      * Start shooter at constant velocity (maintains speed during launches)
-     * @param velocityTicksPerSecond Target velocity (e.g., 1400-1600 for typical shooter)
+     * @param curTargetVelocity Target velocity (e.g., 1400-1600 for typical shooter)
      */
-    public void startShooter(double velocityTicksPerSecond) {
-        shooter.setVelocity(velocityTicksPerSecond);
+    public void startShooter(double curTargetVelocity) {
+        flywheelMotor.setVelocity(curTargetVelocity);
     }
 
     /**
@@ -39,14 +43,14 @@ public class RobotMotors {
      * @return Current velocity
      */
     public double getShooterVelocity() {
-        return shooter.getVelocity();
+        return flywheelMotor.getVelocity();
     }
 
     /**
      * Stop shooter motor
      */
     public void stopShooter() {
-        shooter.setVelocity(0);
+        flywheelMotor.setVelocity(0);
     }
 
     /**
@@ -56,7 +60,7 @@ public class RobotMotors {
      * @return true if within tolerance
      */
     public boolean isShooterAtVelocity(double targetVelocity, double tolerance) {
-        double currentVelocity = shooter.getVelocity();
+        double currentVelocity = flywheelMotor.getVelocity();
         return Math.abs(currentVelocity - targetVelocity) <= tolerance;
     }
 
