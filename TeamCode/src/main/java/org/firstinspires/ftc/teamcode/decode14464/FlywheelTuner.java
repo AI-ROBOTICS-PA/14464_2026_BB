@@ -12,13 +12,13 @@ public class FlywheelTuner extends OpMode {
     private DcMotorEx flywheelMotor;
 
     // Target velocities (ticks per second)
-    public double highVelocity = 1500;
-    public double lowVelocity = 900;
+    public double highVelocity = 1450;
+    public double lowVelocity = 1100;
     public double curTargetVelocity = highVelocity;
 
     // PIDF values (we're only tuning P and F, I and D stay at 0)
-    private double p = 0.0;
-    private double f = 0.0;
+    private double p = 300.0;
+    private double f = 13.65;
 
     // Step sizes for fine and coarse tuning
     private final double[] stepSizes = {10.0, 1.0, 0.1, 0.01, 0.001};

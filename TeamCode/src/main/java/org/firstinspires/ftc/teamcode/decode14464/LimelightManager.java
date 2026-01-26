@@ -169,6 +169,58 @@ public class LimelightManager {
     }
 
     /**
+     * Get distance to a specific AprilTag by ID
+     * @param tagId The AprilTag ID to get distance for
+     * @return Distance in inches, or 0.0 if tag not visible
+     */
+    public double getDistanceToTag(int tagId) {
+        LLResultTypes.FiducialResult tag = getAprilTag(tagId);
+        if (tag == null) return 0.0;
+
+        try {
+            Pose3D targetPose = tag.getTargetPoseRobotSpace();
+            if (targetPose != null) {
+                // Limelight returns position in METERS, convert to INCHES
+                double x = targetPose.getPosition().x * 39.3701; // meters to inches
+                double y = targetPose.getPosition().y * 39.3701;
+                double z = targetPose.getPosition().z * 39.3701;
+
+                // Calculate 3D distance in inches
+                return Math.sqrt(x*x + y*y + z*z);
+            }
+        } catch (Exception e) {
+            return 0.0;
+        }
+        return 0.0;
+    }
+
+    /**
+     * Get distance to the first visible AprilTag
+     * @return Distance in inches, or 0.0 if no tags visible
+     */
+    public double getDistanceToFirstTag() {
+        List<LLResultTypes.FiducialResult> tags = getAprilTags();
+        if (tags == null || tags.isEmpty()) return 0.0;
+
+        LLResultTypes.FiducialResult tag = tags.get(0);
+        try {
+            Pose3D targetPose = tag.getTargetPoseRobotSpace();
+            if (targetPose != null) {
+                // Limelight returns position in METERS, convert to INCHES
+                double x = targetPose.getPosition().x * 39.3701; // meters to inches
+                double y = targetPose.getPosition().y * 39.3701;
+                double z = targetPose.getPosition().z * 39.3701;
+
+                // Calculate 3D distance in inches
+                return Math.sqrt(x*x + y*y + z*z);
+            }
+        } catch (Exception e) {
+            return 0.0;
+        }
+        return 0.0;
+    }
+
+    /**
      * Shutdown Limelight
      */
     public void stop() {

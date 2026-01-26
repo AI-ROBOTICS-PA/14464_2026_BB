@@ -23,7 +23,7 @@ public class RobotMotors {
         flywheelMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
         // Set initial PIDF coefficients (P, I, D, F)
-        PIDFCoefficients pidfCoefficients = new PIDFCoefficients(300, 0, 0, 14.65);
+        PIDFCoefficients pidfCoefficients = new PIDFCoefficients(300, 0, 0, 13.65);
         flywheelMotor.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER, pidfCoefficients);
 
 

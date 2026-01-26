@@ -116,15 +116,16 @@ public class TagReader extends OpMode {
                     tag.getTargetPoseRobotSpace();
 
                 if (targetPose != null) {
-                    double x = targetPose.getPosition().x;
-                    double y = targetPose.getPosition().y;
-                    double z = targetPose.getPosition().z;
+                    // Limelight returns position in METERS, convert to INCHES
+                    double x = targetPose.getPosition().x * 39.3701; // meters to inches
+                    double y = targetPose.getPosition().y * 39.3701;
+                    double z = targetPose.getPosition().z * 39.3701;
 
                     telemetry.addData("  Position X", "%.2f inches", x);
                     telemetry.addData("  Position Y", "%.2f inches", y);
                     telemetry.addData("  Position Z", "%.2f inches", z);
 
-                    // Calculate distance
+                    // Calculate distance in inches
                     double distance = Math.sqrt(x*x + y*y + z*z);
                     telemetry.addData("  Distance", "%.2f inches", distance);
                 }
