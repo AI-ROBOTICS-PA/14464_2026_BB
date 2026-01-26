@@ -64,9 +64,13 @@ public class Decode_Teleop extends OpMode {
     private boolean rightBumped;
 
     private boolean isshooterActive = false;
-    private double targetShooterVelocity = 1450; // Target velocity for shooter
+    private double targetShooterhighVelocity = 1450; // Target velocity for shooter
 
-    public double lowVelocity = 1100;
+    public double targetShooterlowVelocity = 1100;
+
+    // Auto-advance on color detection (intake mode only)
+    private String previousColor = "Black";
+    private boolean colorTransitionDetected = false;
 
     @Override
     public void init() {
@@ -135,7 +139,7 @@ public class Decode_Teleop extends OpMode {
                 isshooterActive = false;
             }
             else{
-                robotMotors.startShooter(targetShooterVelocity);
+                robotMotors.startShooter(targetShooterhighVelocity);
                 isshooterActive = true;
             }
         }
@@ -225,20 +229,36 @@ public class Decode_Teleop extends OpMode {
         if (gamepad1.a && !prevAPressed) {
             if (!intakeMode) {
                 // Switching from LAUNCH to INTAKE mode
-                currentTurretPositionIndex = findClosestPositionIndex(currentTurretServoPosition, INTAKE_POSITIONS);
-                currentTurretServoPosition = INTAKE_POSITIONS[currentTurretPositionIndex];
+                // ALWAYS go to index 0 (first position) in INTAKE mode
+                currentTurretPositionIndex = 0;
+                currentTurretServoPosition = INTAKE_POSITIONS[0]; // 0.07
 
                 robotServos.turret_1.setPosition(currentTurretServoPosition);
                 robotServos.colorservo.setPosition(1);
                 intakeMode = true;
+
+                // ALWAYS reset to "Black" so auto-advance is ready immediately
+                // This allows it to detect the FIRST ball even if sensor currently sees color
+                previousColor = "Black";
+                colorTransitionDetected = false;
+
+                telemetry.addLine("✅ Switched to INTAKE mode - Reset to Index 0");
+                telemetry.addData("Ready for auto-advance", "YES");
             } else {
                 // Switching from INTAKE to LAUNCH mode
+                // Find closest LAUNCH position
                 currentTurretPositionIndex = findClosestPositionIndex(currentTurretServoPosition, LAUNCH_POSITIONS);
                 currentTurretServoPosition = LAUNCH_POSITIONS[currentTurretPositionIndex];
 
                 robotServos.turret_1.setPosition(currentTurretServoPosition);
                 robotServos.colorservo.setPosition(0.38);
                 intakeMode = false;
+
+                // Reset color sensor state
+                previousColor = "Black";
+                colorTransitionDetected = false;
+
+                telemetry.addLine("✅ Switched to LAUNCH mode");
             }
         }
         prevAPressed = gamepad1.a;
@@ -344,6 +364,88 @@ public class Decode_Teleop extends OpMode {
             prevDpadRightPressed = gamepad1.dpad_right;
         }
 
+        // ========== AUTO-ADVANCE IN INTAKE MODE (Color Sensor) ==========
+        if (intakeMode) {
+            String currentColor = robotSensors.getColorName(robotSensors.color_f);
+
+            telemetry.addLine("═══ COLOR SENSOR STATE ═══");
+            telemetry.addData("📸 Current Sensor Reading", currentColor);
+            telemetry.addData("📋 Previous Color Stored", previousColor);
+            telemetry.addData("🔒 Transition Locked", colorTransitionDetected ? "YES" : "NO");
+
+            // Helper method to check if color represents "no ball" state
+            // Sensor can return "Black" or "None" when no ball is present
+            boolean isNoBall = currentColor.equalsIgnoreCase("Black") || currentColor.equalsIgnoreCase("None");
+            boolean wasPreviousNoBall = previousColor.equalsIgnoreCase("Black") || previousColor.equalsIgnoreCase("None");
+
+            // Debug: Show transition detection logic
+            boolean isPreviousBlack = wasPreviousNoBall;
+            boolean isCurrentNotBlack = !isNoBall;
+            boolean isNotLocked = !colorTransitionDetected;
+            boolean willTrigger = isPreviousBlack && isCurrentNotBlack && isNotLocked;
+
+            telemetry.addLine("🔍 TRANSITION CHECK:");
+            telemetry.addData("  Previous was Black?", isPreviousBlack ? "YES ✓" : "NO ✗ (was: " + previousColor + ")");
+            telemetry.addData("  Current is NOT Black?", isCurrentNotBlack ? "YES ✓ (is: " + currentColor + ")" : "NO ✗ (is: " + currentColor + ")");
+            telemetry.addData("  NOT Locked?", isNotLocked ? "YES ✓" : "NO ✗ (LOCKED)");
+            telemetry.addData("  → Will Trigger?", willTrigger ? "YES! 🚀" : "NO");
+
+            // Detect color change from Black to any other color
+            if (willTrigger) {
+                // Non-black color detected - advance to next position
+                colorTransitionDetected = true; // Lock to prevent multiple advances
+
+                telemetry.addLine("⚡ TRIGGERING AUTO-ADVANCE!");
+                telemetry.addData("From Index", currentTurretPositionIndex);
+
+                if (currentTurretPositionIndex < INTAKE_POSITIONS.length - 1) {
+                    // Can advance to next position
+                    int oldIndex = currentTurretPositionIndex;
+                    currentTurretPositionIndex++;
+                    currentTurretServoPosition = INTAKE_POSITIONS[currentTurretPositionIndex];
+
+                    if (robotServos.turret_1 != null) {
+                        robotServos.turret_1.setPosition(currentTurretServoPosition);
+                        telemetry.addLine("🎨 AUTO-ADVANCE SUCCESS!");
+                        telemetry.addData("Color Detected", currentColor);
+                        telemetry.addData("Moved", "%d → %d", oldIndex, currentTurretPositionIndex);
+                        telemetry.addData("Position", "%.2f → %.2f", INTAKE_POSITIONS[oldIndex], currentTurretServoPosition);
+                    }
+                } else {
+                    telemetry.addLine("⚠️ Already at last position - cannot auto-advance");
+                    telemetry.addData("Current Index", currentTurretPositionIndex);
+                }
+            }
+
+            // Update previousColor based on current sensor reading
+            telemetry.addLine("📝 UPDATING PREVIOUS COLOR:");
+            telemetry.addData("  Sensor reads", currentColor);
+
+            // Check if sensor shows "no ball" state (Black or None)
+            boolean currentIsNoBall = currentColor.equalsIgnoreCase("Black") || currentColor.equalsIgnoreCase("None");
+
+            if (currentIsNoBall) {
+                // Color returned to "no ball" state - unlock and reset
+                if (colorTransitionDetected) {
+                    telemetry.addLine("  🔓 UNLOCKING - No ball detected (sensor: " + currentColor + ")");
+                }
+                colorTransitionDetected = false;
+                previousColor = "Black"; // Always use "Black" as the standard "no ball" reference
+                telemetry.addData("  → Setting previousColor to", "Black");
+            } else {
+                // Ball detected - remember the color
+                previousColor = currentColor;
+                telemetry.addData("  → Setting previousColor to", currentColor);
+            }
+
+            telemetry.addData("✅ Final previousColor", previousColor);
+
+        } else {
+            // Reset when not in intake mode
+            previousColor = "Black";
+            colorTransitionDetected = false;
+        }
+
 
         // Color sensor detection with comprehensive info (FTC best practices)
         telemetry.addData("Color BR", robotSensors.getColorName(robotSensors.color_br));
@@ -360,6 +462,15 @@ public class Decode_Teleop extends OpMode {
         telemetry.addData("Hood Servo Position", hood_servoPosition);
         telemetry.addData("Mode", intakeMode ? "INTAKE" : "LAUNCH");
 
+        // Show auto-advance debug info when in INTAKE mode
+        if (intakeMode) {
+            telemetry.addLine("--- AUTO-ADVANCE DEBUG ---");
+            telemetry.addData("Current Color", robotSensors.getColorName(robotSensors.color_f));
+            telemetry.addData("Previous Color", previousColor);
+            telemetry.addData("Transition Locked", colorTransitionDetected ? "YES (waiting for black)" : "NO (ready)");
+            telemetry.addData("Can Advance", currentTurretPositionIndex < INTAKE_POSITIONS.length - 1 ? "YES" : "NO (at last position)");
+        }
+
         // Show available positions for both modes
         telemetry.addLine("--- TURRET POSITIONS ---");
         telemetry.addData("INTAKE Positions",
@@ -369,7 +480,7 @@ public class Decode_Teleop extends OpMode {
             String.format("[0]=%.2f, [1]=%.2f, [2]=%.2f",
                 LAUNCH_POSITIONS[0], LAUNCH_POSITIONS[1], LAUNCH_POSITIONS[2]));
 
-        telemetry.addData("Shooter Target Velocity", targetShooterVelocity);
+        telemetry.addData("Shooter Target Velocity", targetShooterhighVelocity);
         telemetry.addData("Shooter Current Velocity", robotMotors.getShooterVelocity());
 
         telemetry.update();
