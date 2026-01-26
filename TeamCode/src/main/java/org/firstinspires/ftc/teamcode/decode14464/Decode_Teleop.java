@@ -26,6 +26,11 @@ public class Decode_Teleop extends OpMode {
     private RobotServos robotServos = new RobotServos();
     private LimelightManager limelightManager = new LimelightManager();
     private RobotSensors robotSensors = new RobotSensors();
+
+    // AutoTurret variables
+    private DecodeUtils.TurretPIDState turretPidState = new DecodeUtils.TurretPIDState();
+    private boolean autoTrackEnabled = true; // Default to auto-tracking enabled
+    private int currentTargetTagID = TurretConstants.PRIMARY_TAG_ID; // Start with tag 20
     private boolean prevDpadUpPressed  = false;
     private boolean prevDpadDownPressed  = false;
     private boolean prevDpadLeftPressed  = false;
@@ -52,19 +57,23 @@ public class Decode_Teleop extends OpMode {
     private boolean leftBumped;
     private boolean isintakeActive = false;
     private boolean rightBumped;
-    private boolean rightBumped2;
+
     private boolean isshooterActive = false;
     private double targetShooterVelocity = 1500; // Target velocity for shooter
-    private boolean isscanActive = false;
-    private boolean iscatActive = false;
-    private boolean leftBumped2;
-    private boolean isholdActive = false;
+
 
     @Override
     public void init() {
         robotMotors.init(hardwareMap);
         robotServos.init(hardwareMap);
         robotSensors.init(hardwareMap); // <-- Ensure color sensors are initialized
+
+        // Initialize turret for auto-tracking
+        DecodeUtils.initializeTurretMotor(robotMotors.turret);
+
+        // Initialize Limelight
+        limelightManager.init(hardwareMap);
+
         follower = Constants.createFollower(hardwareMap);
         follower.setStartingPose(startingPose == null ? new Pose() : startingPose);
         follower.update();
@@ -85,6 +94,9 @@ public class Decode_Teleop extends OpMode {
     public void loop() {
         follower.update();
         telemetryM.update();
+
+        // Update Limelight data
+        limelightManager.update();
 
         // Intake control For player 1 with left bumper and player 2 right stick
         if (gamepad1.left_bumper && !leftBumped) {
@@ -129,7 +141,68 @@ public class Decode_Teleop extends OpMode {
             );
         }
 
-            robotMotors.turret.setPower(gamepad2.right_stick_y);
+        // ========== AUTO TURRET CONTROL ==========
+        // Toggle auto-tracking with gamepad2 Cross (X)
+        if (gamepad2.cross) {
+            autoTrackEnabled = true;
+        }
+        if (gamepad2.circle) {
+            autoTrackEnabled = false;
+        }
+
+        // Switch between tag 20 and 24 with gamepad2 Triangle
+        if (gamepad2.triangle) {
+            currentTargetTagID = (currentTargetTagID == TurretConstants.PRIMARY_TAG_ID)
+                ? TurretConstants.SECONDARY_TAG_ID
+                : TurretConstants.PRIMARY_TAG_ID;
+        }
+
+        double turretPower = 0.0;
+
+        if (autoTrackEnabled) {
+            // AUTO-TRACKING MODE
+            DecodeUtils.TurretTrackingResult result = DecodeUtils.autoTrackTurret(
+                limelightManager,
+                currentTargetTagID,
+                turretPidState
+            );
+
+            turretPower = result.motorPower;
+
+            // Add telemetry for auto-tracking
+            telemetry.addData("🎯 Auto-Track", "ENABLED");
+            telemetry.addData("Target Tag", currentTargetTagID);
+            telemetry.addData("Tag Visible", result.isTracking ? "YES ✓" : "NO ✗");
+            if (result.isTracking) {
+                telemetry.addData("Status", result.isLockedOn ? "LOCKED ON ✓" : "TRACKING...");
+                telemetry.addData("Error", "%.2f°", result.error);
+            }
+
+        } else {
+            // MANUAL CONTROL MODE - Use gamepad2 right stick
+            turretPower = gamepad2.right_stick_y;
+            turretPidState.reset(); // Reset PID when not tracking
+
+            telemetry.addData("🎯 Auto-Track", "Manual");
+        }
+
+        // Enforce rotation limits for safety
+        turretPower = DecodeUtils.enforceTurretLimits(
+            robotMotors.turret.getCurrentPosition(),
+            turretPower
+        );
+
+        // Apply power to turret motor
+        robotMotors.turret.setPower(turretPower);
+
+        // Show turret position
+        telemetry.addData("Turret Position",
+            DecodeUtils.getTurretPositionStatus(robotMotors.turret.getCurrentPosition()));
+
+        // Warning if near limits
+        if (DecodeUtils.isTurretNearLimits(robotMotors.turret.getCurrentPosition(), 20.0)) {
+            telemetry.addLine("⚠️ WARNING: Turret near rotation limit!");
+        }
         if(!intakeMode) {
             robotServos.ballpush_4.setPosition(robotServos.ballpush_initial_position + (gamepad1.right_trigger * 0.27));
         }

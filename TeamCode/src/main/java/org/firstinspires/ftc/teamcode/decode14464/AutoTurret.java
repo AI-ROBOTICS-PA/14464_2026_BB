@@ -21,7 +21,7 @@ import com.qualcomm.robotcore.hardware.DcMotorEx;
  * - Right Stick X: Manual turret control
  * - D-Pad Up/Down: Fine tune position
  */
-@TeleOp(name = "Auto Turret", group = "Competition")
+@TeleOp(name = "Auto Turret", group = "Tuning")
 public class AutoTurret extends OpMode {
 
     // Hardware
@@ -31,21 +31,22 @@ public class AutoTurret extends OpMode {
     // ========== TURRET CONFIGURATION ==========
     // Motor encoder positions (adjust based on your turret setup)
     public static double ENCODER_TICKS_PER_DEGREE = 5.0; // TUNE THIS - ticks per degree of rotation
-    public static double MAX_ROTATION_DEGREES = 270.0;   // Maximum rotation allowed
-    public static double MIN_ROTATION_DEGREES = 0.0;     // Minimum rotation (typically 0)
+    public static double CENTER_POSITION_DEGREES = 150.0; // Center/starting position
+    public static double MAX_ROTATION_DEGREES = 300.0;   // Maximum rotation (150° anticlockwise from center)
+    public static double MIN_ROTATION_DEGREES = 0.0;     // Minimum rotation (150° clockwise from center)
 
     // Calculate encoder limits
     private double maxEncoderPosition = MAX_ROTATION_DEGREES * ENCODER_TICKS_PER_DEGREE;
     private double minEncoderPosition = MIN_ROTATION_DEGREES * ENCODER_TICKS_PER_DEGREE;
-    private double centerEncoderPosition = (MAX_ROTATION_DEGREES / 2.0) * ENCODER_TICKS_PER_DEGREE;
+    private double centerEncoderPosition = CENTER_POSITION_DEGREES * ENCODER_TICKS_PER_DEGREE; // 150 degrees
 
     // ========== PID CONTROL PARAMETERS ==========
-    public static double AUTO_TRACK_KP = 0.025;  // Proportional gain - REDUCED to stop oscillation
+    public static double AUTO_TRACK_KP = 0.035;  // Proportional gain - INCREASED for faster response
     public static double AUTO_TRACK_KI = 0.0;    // Integral gain (usually 0)
-    public static double AUTO_TRACK_KD = 0.010;  // Derivative gain - INCREASED for damping
-    public static double MAX_TURRET_POWER = 0.5; // Maximum motor power - REDUCED for control
+    public static double AUTO_TRACK_KD = 0.022;  // Derivative gain - INCREASED for smoother damping
+    public static double MAX_TURRET_POWER = 1; // Maximum motor power - INCREASED to 60%
     public static double DEADBAND = 2.0;         // Degrees - stop if within this range
-    public static double MIN_POWER_THRESHOLD = 0.08; // Minimum power to overcome friction
+    public static double MIN_POWER_THRESHOLD = 0.12; // Minimum power - INCREASED to overcome friction better
 
     // Motor direction correction
     public static boolean INVERT_TURRET_DIRECTION = true; // CHANGED TO TRUE - fixes unidirectional movement
@@ -53,6 +54,16 @@ public class AutoTurret extends OpMode {
     // PID variables
     private double previousError = 0.0;
     private double integral = 0.0;
+
+    // ========== TUNING CONTROLS ==========
+    // Step sizes for dynamic tuning (allows fine and coarse adjustments)
+    private double[] stepSizes = {0.1, 0.01, 0.001, 0.0001};
+    private int stepIndex = 1; // Start with 0.01 step size
+
+    // Current tuning values (start with defaults, can be adjusted on-the-fly)
+    private double kp = AUTO_TRACK_KP;
+    private double kd = AUTO_TRACK_KD;
+    private double maxPower = MAX_TURRET_POWER;
 
     // ========== APRILTAG CONFIGURATION ==========
     public static int PRIMARY_TAG_ID = 20;
@@ -67,6 +78,9 @@ public class AutoTurret extends OpMode {
     private boolean prevCross = false;
     private boolean prevTriangle = false;
     private boolean prevCircle = false;
+    private boolean prevSquare = false;
+    private boolean prevDpadLeft = false;
+    private boolean prevDpadRight = false;
 
     @Override
     public void init() {
@@ -86,13 +100,19 @@ public class AutoTurret extends OpMode {
         telemetry.addLine("Controls:");
         telemetry.addLine("  Cross (X) - Toggle auto-tracking");
         telemetry.addLine("  Triangle - Switch tag (20 ↔ 24)");
-        telemetry.addLine("  Circle - Reset to center");
+        telemetry.addLine("  Circle - Reset to center (150°)");
+        telemetry.addLine("  Square - Change step size");
         telemetry.addLine("  Right Stick X - Manual control");
-        telemetry.addLine("  D-Pad Up/Down - Fine adjust");
+        telemetry.addLine("");
+        telemetry.addLine("TUNING (Gamepad 2):");
+        telemetry.addLine("  D-Pad Up/Down - Adjust KP");
+        telemetry.addLine("  D-Pad Left/Right - Adjust KD");
+        telemetry.addLine("  Left Bumper/Right Bumper - Max Power");
         telemetry.addLine("=================================");
         telemetry.addData("Limelight", limelightManager.isConnected() ? "Connected" : "NOT FOUND");
         telemetry.addData("Target Tag", currentTargetTagID);
-        telemetry.addData("Max Rotation", MAX_ROTATION_DEGREES + "°");
+        telemetry.addData("Rotation Range", "0° to 300° (±150° from center)");
+        telemetry.addData("Center Position", "150°");
         telemetry.update();
     }
 
@@ -141,6 +161,44 @@ public class AutoTurret extends OpMode {
             autoTrackEnabled = false; // Disable auto-tracking when resetting
         }
         prevCircle = gamepad1.circle;
+
+        // Change step size with Square
+        if (gamepad1.square && !prevSquare) {
+            stepIndex = (stepIndex + 1) % stepSizes.length;
+        }
+        prevSquare = gamepad1.square;
+
+        // ========== TUNING CONTROLS (GAMEPAD 2) ==========
+
+        // Adjust KP with D-Pad Up/Down
+        if (gamepad2.dpad_up && !prevDpadLeft) {
+            kp += stepSizes[stepIndex];
+        }
+        if (gamepad2.dpad_down && !prevDpadLeft) {
+            kp -= stepSizes[stepIndex];
+            if (kp < 0) kp = 0; // Don't allow negative
+        }
+
+        // Adjust KD with D-Pad Left/Right
+        if (gamepad2.dpad_right && !prevDpadRight) {
+            kd += stepSizes[stepIndex];
+        }
+        if (gamepad2.dpad_left && !prevDpadLeft) {
+            kd -= stepSizes[stepIndex];
+            if (kd < 0) kd = 0; // Don't allow negative
+        }
+        prevDpadLeft = gamepad2.dpad_left;
+        prevDpadRight = gamepad2.dpad_right;
+
+        // Adjust Max Power with Bumpers
+        if (gamepad2.right_bumper) {
+            maxPower += 0.05;
+            if (maxPower > 1.0) maxPower = 1.0; // Cap at 100%
+        }
+        if (gamepad2.left_bumper) {
+            maxPower -= 0.05;
+            if (maxPower < 0.1) maxPower = 0.1; // Minimum 10%
+        }
 
         // ========== TURRET CONTROL ==========
         double turretPower = 0.0;
@@ -210,18 +268,18 @@ public class AutoTurret extends OpMode {
             integral += error;
             double derivative = error - previousError;
 
-            // Calculate power using PID formula
-            double power = (AUTO_TRACK_KP * error) +
+            // Calculate power using PID formula (using dynamic tuning values)
+            double power = (kp * error) +
                           (AUTO_TRACK_KI * integral) +
-                          (AUTO_TRACK_KD * derivative);
+                          (kd * derivative);
 
             // Apply direction inversion if needed
             if (INVERT_TURRET_DIRECTION) {
                 power = -power;
             }
 
-            // Clamp power
-            power = Math.max(-MAX_TURRET_POWER, Math.min(MAX_TURRET_POWER, power));
+            // Clamp power using dynamic max power value
+            power = Math.max(-maxPower, Math.min(maxPower, power));
 
             // Add minimum power to overcome friction (prevents jerky slow movements)
             if (Math.abs(power) > 0.01 && Math.abs(power) < MIN_POWER_THRESHOLD) {
@@ -357,6 +415,19 @@ public class AutoTurret extends OpMode {
         if (currentDegrees < MIN_ROTATION_DEGREES + 20) {
             telemetry.addLine("⚠️ WARNING: Near MIN limit!");
         }
+
+        telemetry.addLine("---------------------------------");
+        telemetry.addLine("  TUNING VALUES (Gamepad 2)");
+        telemetry.addLine("---------------------------------");
+        telemetry.addData("KP", "%.4f", kp);
+        telemetry.addData("KD", "%.4f", kd);
+        telemetry.addData("Max Power", "%.2f", maxPower);
+        telemetry.addData("Step Size", "%.4f", stepSizes[stepIndex]);
+        telemetry.addLine("");
+        telemetry.addLine("Adjust: D-Pad Up/Down (KP)");
+        telemetry.addLine("        D-Pad L/R (KD)");
+        telemetry.addLine("        Bumpers (Max Power)");
+        telemetry.addLine("        Square (Step Size)");
 
         telemetry.addLine("=================================");
         telemetry.update();
