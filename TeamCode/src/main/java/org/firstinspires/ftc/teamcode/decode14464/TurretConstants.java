@@ -2,9 +2,16 @@ package org.firstinspires.ftc.teamcode.decode14464;
 
 /**
  * TurretConstants - Configuration constants for Auto Turret System
+ * DECODE 14464 - FTC 2026 Season
  *
  * All turret-related configuration in one place for easy tuning and reuse
  * across TeleOp and Autonomous programs.
+ * 
+ * CALIBRATION GUIDE:
+ * 1. Run TurretCalibration OpMode
+ * 2. Manually rotate turret 90 degrees
+ * 3. Note encoder change and calculate ENCODER_TICKS_PER_DEGREE
+ * 4. Tune PID starting with KP only, then add KD
  */
 public class TurretConstants {
 
@@ -13,6 +20,11 @@ public class TurretConstants {
      * Motor hardware name in Robot Configuration
      */
     public static final String TURRET_MOTOR_NAME = "turret";
+    
+    /**
+     * Limelight hardware name in Robot Configuration
+     */
+    public static final String LIMELIGHT_NAME = "limelight";
 
     /**
      * Encoder ticks per degree of turret rotation
@@ -22,6 +34,8 @@ public class TurretConstants {
      * 1. Manually rotate turret exactly 90 degrees
      * 2. Note encoder position change
      * 3. Calculate: ticks / 90 = ticks per degree
+     * 
+     * Example: If 90° = 450 ticks, then TICKS_PER_DEGREE = 450/90 = 5.0
      */
     public static double ENCODER_TICKS_PER_DEGREE = 5.0;
 

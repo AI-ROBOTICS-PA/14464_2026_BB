@@ -147,8 +147,11 @@ public class Decode_Teleop extends OpMode {
         }
         rightBumped = gamepad1.right_bumper;
 
-        // Toggle between high and low shooter velocity with Y button
-        if (gamepad1.y && !prevYPressed) {
+        // Toggle between high and low shooter velocity with Y/Triangle button
+        // Support both PlayStation (triangle) and Xbox (y) button styles
+        boolean velocityTogglePressed = gamepad1.y || gamepad1.triangle;
+
+        if (velocityTogglePressed && !prevYPressed) {
             isHighVelocityMode = !isHighVelocityMode;
 
             if (isHighVelocityMode) {
@@ -165,7 +168,7 @@ public class Decode_Teleop extends OpMode {
                 telemetry.addLine("✅ Shooter velocity updated");
             }
         }
-        prevYPressed = gamepad1.y;
+        prevYPressed = velocityTogglePressed;
 
         // Drive control
         if (!automatedDrive) {
@@ -184,16 +187,16 @@ public class Decode_Teleop extends OpMode {
         }
 
         // ========== AUTO TURRET CONTROL ==========
-        // Toggle auto-tracking with gamepad2 Cross (X)
-        if (gamepad2.cross) {
+        // Toggle auto-tracking with gamepad2 Cross (X) / Circle (O)
+        if (gamepad2.cross || gamepad2.a) {
             autoTrackEnabled = true;
         }
-        if (gamepad2.circle) {
+        if (gamepad2.circle || gamepad2.b) {
             autoTrackEnabled = false;
         }
 
-        // Switch between tag 20 and 24 with gamepad2 Triangle
-        if (gamepad2.triangle) {
+        // Switch between tag 20 and 24 with gamepad2 Triangle/Y
+        if (gamepad2.triangle || gamepad2.y) {
             currentTargetTagID = (currentTargetTagID == TurretConstants.PRIMARY_TAG_ID)
                 ? TurretConstants.SECONDARY_TAG_ID
                 : TurretConstants.PRIMARY_TAG_ID;
@@ -221,11 +224,39 @@ public class Decode_Teleop extends OpMode {
             }
 
         } else {
-            // MANUAL CONTROL MODE - Use gamepad2 right stick
-            turretPower = gamepad2.right_stick_y;
+            // ========== MANUAL TURRET CONTROL MODE (Gamepad 2) ==========
+
+            // Continuous control with right stick Y
+            double stickControl = -gamepad2.right_stick_y * 0.6; // Inverted, 60% max speed
+
+            // Fine adjustment with D-Pad
+            double dpadControl = 0.0;
+            if (gamepad2.dpad_up) {
+                dpadControl = 0.2; // Fine control positive
+            } else if (gamepad2.dpad_down) {
+                dpadControl = -0.2; // Fine control negative
+            }
+
+            // Left stick X for alternative control
+            double leftStickControl = gamepad2.left_stick_x * 0.4; // 40% max speed
+
+            // Combine controls (priority: D-Pad > Right Stick > Left Stick)
+            if (Math.abs(dpadControl) > 0.01) {
+                turretPower = dpadControl;
+            } else if (Math.abs(stickControl) > 0.05) {
+                turretPower = stickControl;
+            } else {
+                turretPower = leftStickControl;
+            }
+
             turretPidState.reset(); // Reset PID when not tracking
 
-            telemetry.addData("🎯 Auto-Track", "Manual");
+            telemetry.addData("🎯 Auto-Track", "MANUAL MODE");
+            telemetry.addData("Control Source",
+                Math.abs(dpadControl) > 0.01 ? "D-Pad" :
+                Math.abs(stickControl) > 0.05 ? "Right Stick" :
+                Math.abs(leftStickControl) > 0.05 ? "Left Stick" : "Idle");
+            telemetry.addData("Turret Power", "%.2f", turretPower);
         }
 
         // Enforce rotation limits for safety
@@ -248,7 +279,10 @@ public class Decode_Teleop extends OpMode {
         if(!intakeMode) {
             robotServos.ballpush_4.setPosition(robotServos.ballpush_initial_position + (gamepad1.right_trigger * 0.27));
         }
-        if (gamepad1.a && !prevAPressed) {
+        // Support both PlayStation (cross) and Xbox (a) button styles
+        boolean modeSwitchPressed = gamepad1.a || gamepad1.cross;
+
+        if (modeSwitchPressed && !prevAPressed) {
             if (!intakeMode) {
                 // Switching from LAUNCH to INTAKE mode
                 // ALWAYS go to index 0 (first position) in INTAKE mode
@@ -283,11 +317,17 @@ public class Decode_Teleop extends OpMode {
                 telemetry.addLine("✅ Switched to LAUNCH mode");
             }
         }
-        prevAPressed = gamepad1.a;
+        prevAPressed = modeSwitchPressed;
 
-        // ========== HOOD SERVO CONTROL (gamepad1 D-Pad Up/Down) ==========
-        // Increment hood position with D-Pad Up
-        if (gamepad1.dpad_up && !prevDpadUpPressed) {
+        // ========== HOOD SERVO CONTROL ==========
+        // Gamepad 1: D-Pad Up/Down (primary control)
+        // Gamepad 2: D-Pad Left/Right (secondary control for operator)
+
+        boolean hoodIncrementPressed = gamepad1.dpad_up || gamepad2.dpad_right;
+        boolean hoodDecrementPressed = gamepad1.dpad_down || gamepad2.dpad_left;
+
+        // Increment hood position with D-Pad Up (GP1) or D-Pad Right (GP2)
+        if (hoodIncrementPressed && !prevDpadUpPressed) {
             hood_servoPosition += HOOD_INCREMENT;
             if (hood_servoPosition > HoodConstants.HOOD_MAX_POSITION) {
                 hood_servoPosition = HoodConstants.HOOD_MAX_POSITION;
@@ -298,10 +338,10 @@ public class Decode_Teleop extends OpMode {
                 telemetry.addData("ERROR", "Servo 'hood_5' not found. Check hardwareMap name and configuration.");
             }
         }
-        prevDpadUpPressed = gamepad1.dpad_up;
+        prevDpadUpPressed = hoodIncrementPressed;
 
-        // Decrement hood position with D-Pad Down
-        if (gamepad1.dpad_down && !prevDpadDownPressed) {
+        // Decrement hood position with D-Pad Down (GP1) or D-Pad Left (GP2)
+        if (hoodDecrementPressed && !prevDpadDownPressed) {
             hood_servoPosition -= HOOD_INCREMENT;
             if (hood_servoPosition < HoodConstants.HOOD_MIN_POSITION) {
                 hood_servoPosition = HoodConstants.HOOD_MIN_POSITION;
@@ -312,7 +352,7 @@ public class Decode_Teleop extends OpMode {
                 telemetry.addData("ERROR", "Servo 'hood_5' not found. Check hardwareMap name and configuration.");
             }
         }
-        prevDpadDownPressed = gamepad1.dpad_down;
+        prevDpadDownPressed = hoodDecrementPressed;
 
 
         // ========== TURRET SERVO CONTROL (gamepad1 D-Pad Left/Right) ==========
