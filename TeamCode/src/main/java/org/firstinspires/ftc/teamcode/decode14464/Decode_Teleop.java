@@ -259,11 +259,14 @@ public class Decode_Teleop extends OpMode {
             telemetry.addData("Turret Power", "%.2f", turretPower);
         }
 
-        // Enforce rotation limits for safety
-        turretPower = DecodeUtils.enforceTurretLimits(
-            robotMotors.turret.getCurrentPosition(),
-            turretPower
-        );
+        // Enforce rotation limits ONLY in auto-tracking mode
+        // In manual mode, operator has full control without encoder limits
+        if (autoTrackEnabled) {
+            turretPower = DecodeUtils.enforceTurretLimits(
+                robotMotors.turret.getCurrentPosition(),
+                turretPower
+            );
+        }
 
         // Apply power to turret motor
         robotMotors.turret.setPower(turretPower);
