@@ -10,7 +10,7 @@ public class RobotServos {
     public Servo hood_5 = null;
 
     public Servo colorservo = null;
-    public final double ballpush_initial_position = 0.45;
+    public final double ballpush_initial_position = 0.50;
     public final double ballpush_final_position = 0.47;
 
     public void init(HardwareMap hardwareMap) {

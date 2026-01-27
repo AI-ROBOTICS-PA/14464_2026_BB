@@ -64,9 +64,11 @@ public class Decode_Teleop extends OpMode {
     private boolean rightBumped;
 
     private boolean isshooterActive = false;
-    private double targetShooterhighVelocity = 1450; // Target velocity for shooter
-
-    public double targetShooterlowVelocity = 1100;
+    private double targetShooterhighVelocity = 1450; // High velocity for long distance
+    private double targetShooterlowVelocity = 1100; // Low velocity for short distance
+    private double currentShooterVelocity = 1450; // Start with high velocity
+    private boolean isHighVelocityMode = true; // Track current mode
+    private boolean prevYPressed = false; // For Y button toggle
 
     // Auto-advance on color detection (intake mode only)
     private String previousColor = "Black";
@@ -139,11 +141,31 @@ public class Decode_Teleop extends OpMode {
                 isshooterActive = false;
             }
             else{
-                robotMotors.startShooter(targetShooterhighVelocity);
+                robotMotors.startShooter(currentShooterVelocity); // Use current velocity mode
                 isshooterActive = true;
             }
         }
         rightBumped = gamepad1.right_bumper;
+
+        // Toggle between high and low shooter velocity with Y button
+        if (gamepad1.y && !prevYPressed) {
+            isHighVelocityMode = !isHighVelocityMode;
+
+            if (isHighVelocityMode) {
+                currentShooterVelocity = targetShooterhighVelocity;
+                telemetry.addLine("🚀 Switched to HIGH velocity (long distance)");
+            } else {
+                currentShooterVelocity = targetShooterlowVelocity;
+                telemetry.addLine("🎯 Switched to LOW velocity (short distance)");
+            }
+
+            // If shooter is already active, update its velocity
+            if (isshooterActive) {
+                robotMotors.startShooter(currentShooterVelocity);
+                telemetry.addLine("✅ Shooter velocity updated");
+            }
+        }
+        prevYPressed = gamepad1.y;
 
         // Drive control
         if (!automatedDrive) {
@@ -480,8 +502,12 @@ public class Decode_Teleop extends OpMode {
             String.format("[0]=%.2f, [1]=%.2f, [2]=%.2f",
                 LAUNCH_POSITIONS[0], LAUNCH_POSITIONS[1], LAUNCH_POSITIONS[2]));
 
-        telemetry.addData("Shooter Target Velocity", targetShooterhighVelocity);
-        telemetry.addData("Shooter Current Velocity", robotMotors.getShooterVelocity());
+        // Shooter velocity information
+        telemetry.addLine("--- SHOOTER INFO ---");
+        telemetry.addData("Velocity Mode", isHighVelocityMode ? "HIGH (Long Distance)" : "LOW (Short Distance)");
+        telemetry.addData("Target Velocity", currentShooterVelocity);
+        telemetry.addData("Current Velocity", robotMotors.getShooterVelocity());
+        telemetry.addData("Shooter Active", isshooterActive ? "YES ✓" : "NO");
 
         telemetry.update();
     }
