@@ -29,19 +29,25 @@ public class Decode_Teleop extends OpMode {
 
     // AutoTurret variables
     private DecodeUtils.TurretPIDState turretPidState = new DecodeUtils.TurretPIDState();
-    private boolean autoTrackEnabled = true; // Default to auto-tracking enabled
+    private boolean autoTrackEnabled = false; // Default to MANUAL mode - Player 2 enables auto-tracking with GP2 A/Cross
     private int currentTargetTagID = TurretConstants.PRIMARY_TAG_ID; // Start with tag 20
     private boolean prevDpadUpPressed  = false;
     private boolean prevDpadDownPressed  = false;
-    private boolean prevDpadLeftPressed  = false;
-    private boolean prevDpadRightPressed  = false;
-    private boolean prevDpadLeftPressed2  = false;
-    private boolean prevDpadRightPressed2  = false;
+    private boolean prevDpadLeftPressed  = false;  // For gamepad1 turret control
+    private boolean prevDpadRightPressed  = false; // For gamepad1 turret control
+    private boolean prevDpadLeftPressed2  = false; // For gamepad2 hood fine control
+    private boolean prevDpadRightPressed2  = false; // For gamepad2 hood fine control
     private boolean prevAPressed  = false;
 
     // Hood servo control
-    private final double HOOD_INCREMENT = 0.01; // Amount to increment/decrement
+    private final double HOOD_INCREMENT = 0.02; // Amount to increment/decrement for fine control
     private double hood_servoPosition = HoodConstants.HOME_POSITION; // Initial servo position
+
+    // Hood preset positions for gamepad1 toggle
+    private static final double HOOD_LONG_RANGE = 0.5;  // Long distance shooting
+    private static final double HOOD_SHORT_RANGE = 0.8; // Short distance shooting
+    private boolean isHoodLongRange = true; // Track current preset mode
+
     private final double BI_INCREMENT = 0.1; // Amount to increment/decrement
     private double BI_servoPosition = 0.67; // Initial servo position
     private final double BI_MIN_POSITION = 0.37;
@@ -120,7 +126,7 @@ public class Decode_Teleop extends OpMode {
         // Update Limelight data
         limelightManager.update();
 
-        // Intake control For player 1 with left bumper and player 2 right stick
+        // Intake control For player 1 with left bumper (toggle on/off)
         if (gamepad1.left_bumper && !leftBumped) {
             if (isintakeActive){
                robotMotors.stopIntake();
@@ -132,6 +138,21 @@ public class Decode_Teleop extends OpMode {
            }
         }
         leftBumped = gamepad1.left_bumper;
+
+        // Gamepad 2: Variable intake power control with left stick Y
+        // Allows fine control and outtake (reverse) capability
+        double intakePowerFromGamepad2 = -gamepad2.left_stick_y; // Invert: Up = intake, Down = outtake
+
+        if (Math.abs(intakePowerFromGamepad2) > 0.05) { // Deadzone to prevent drift
+            // Manual control takes over - set the power directly
+            robotMotors.setIntakePower(intakePowerFromGamepad2);
+            // Update toggle state based on direction
+            isintakeActive = intakePowerFromGamepad2 > 0;
+        } else if (!isintakeActive) {
+            // Only stop if toggle is off AND stick is neutral
+            robotMotors.setIntakePower(0);
+        }
+        // If isintakeActive is true and stick is neutral, keep running at toggle speed
 
 
         // Shooter control with right bumper
@@ -214,22 +235,13 @@ public class Decode_Teleop extends OpMode {
 
             turretPower = result.motorPower;
 
-            // Add telemetry for auto-tracking
-            telemetry.addData("🎯 Auto-Track", "ENABLED");
-            telemetry.addData("Target Tag", currentTargetTagID);
-            telemetry.addData("Tag Visible", result.isTracking ? "YES ✓" : "NO ✗");
-            if (result.isTracking) {
-                telemetry.addData("Status", result.isLockedOn ? "LOCKED ON ✓" : "TRACKING...");
-                telemetry.addData("Error", "%.2f°", result.error);
-            }
-
         } else {
             // ========== MANUAL TURRET CONTROL MODE (Gamepad 2) ==========
 
-            // Continuous control with right stick Y
+            // Continuous control with right stick Y (primary)
             double stickControl = -gamepad2.right_stick_y * 0.6; // Inverted, 60% max speed
 
-            // Fine adjustment with D-Pad
+            // Fine adjustment with D-Pad Up/Down (secondary)
             double dpadControl = 0.0;
             if (gamepad2.dpad_up) {
                 dpadControl = 0.2; // Fine control positive
@@ -237,26 +249,17 @@ public class Decode_Teleop extends OpMode {
                 dpadControl = -0.2; // Fine control negative
             }
 
-            // Left stick X for alternative control
-            double leftStickControl = gamepad2.left_stick_x * 0.4; // 40% max speed
-
-            // Combine controls (priority: D-Pad > Right Stick > Left Stick)
+            // Combine controls (priority: D-Pad > Right Stick)
+            // Note: Left stick X removed to avoid interference with left stick Y (intake control)
             if (Math.abs(dpadControl) > 0.01) {
                 turretPower = dpadControl;
             } else if (Math.abs(stickControl) > 0.05) {
                 turretPower = stickControl;
             } else {
-                turretPower = leftStickControl;
+                turretPower = 0.0; // No input
             }
 
             turretPidState.reset(); // Reset PID when not tracking
-
-            telemetry.addData("🎯 Auto-Track", "MANUAL MODE");
-            telemetry.addData("Control Source",
-                Math.abs(dpadControl) > 0.01 ? "D-Pad" :
-                Math.abs(stickControl) > 0.05 ? "Right Stick" :
-                Math.abs(leftStickControl) > 0.05 ? "Left Stick" : "Idle");
-            telemetry.addData("Turret Power", "%.2f", turretPower);
         }
 
         // Enforce rotation limits ONLY in auto-tracking mode
@@ -271,14 +274,6 @@ public class Decode_Teleop extends OpMode {
         // Apply power to turret motor
         robotMotors.turret.setPower(turretPower);
 
-        // Show turret position
-        telemetry.addData("Turret Position",
-            DecodeUtils.getTurretPositionStatus(robotMotors.turret.getCurrentPosition()));
-
-        // Warning if near limits
-        if (DecodeUtils.isTurretNearLimits(robotMotors.turret.getCurrentPosition(), 20.0)) {
-            telemetry.addLine("⚠️ WARNING: Turret near rotation limit!");
-        }
         if(!intakeMode) {
             robotServos.ballpush_4.setPosition(robotServos.ballpush_initial_position + (gamepad1.right_trigger * 0.27));
         }
@@ -323,39 +318,60 @@ public class Decode_Teleop extends OpMode {
         prevAPressed = modeSwitchPressed;
 
         // ========== HOOD SERVO CONTROL ==========
-        // Gamepad 1: D-Pad Up/Down (primary control)
-        // Gamepad 2: D-Pad Left/Right (secondary control for operator)
+        // Gamepad 1: D-Pad Up/Down - Toggle between preset positions (0.5 long range, 0.8 short range)
+        // Gamepad 2: D-Pad Left/Right - Fine control for custom adjustments
 
-        boolean hoodIncrementPressed = gamepad1.dpad_up || gamepad2.dpad_right;
-        boolean hoodDecrementPressed = gamepad1.dpad_down || gamepad2.dpad_left;
+        // GAMEPAD 1: PRESET TOGGLE (UP = Long Range, DOWN = Short Range)
+        if (gamepad1.dpad_up && !prevDpadUpPressed) {
+            // Set to LONG RANGE preset
+            isHoodLongRange = true;
+            hood_servoPosition = HOOD_LONG_RANGE;
+            if (robotServos.hood_5 != null) {
+                robotServos.hood_5.setPosition(hood_servoPosition);
+                telemetry.addLine("🎯 Hood: LONG RANGE (0.5)");
+            }
+        }
+        prevDpadUpPressed = gamepad1.dpad_up;
 
-        // Increment hood position with D-Pad Up (GP1) or D-Pad Right (GP2)
-        if (hoodIncrementPressed && !prevDpadUpPressed) {
+        if (gamepad1.dpad_down && !prevDpadDownPressed) {
+            // Set to SHORT RANGE preset
+            isHoodLongRange = false;
+            hood_servoPosition = HOOD_SHORT_RANGE;
+            if (robotServos.hood_5 != null) {
+                robotServos.hood_5.setPosition(hood_servoPosition);
+                telemetry.addLine("🎯 Hood: SHORT RANGE (0.8)");
+            }
+        }
+        prevDpadDownPressed = gamepad1.dpad_down;
+
+        // GAMEPAD 2: FINE CONTROL (LEFT/RIGHT for custom positions)
+        if (gamepad2.dpad_right && !prevDpadRightPressed2) {
+            // Increment hood position (increase angle)
             hood_servoPosition += HOOD_INCREMENT;
             if (hood_servoPosition > HoodConstants.HOOD_MAX_POSITION) {
                 hood_servoPosition = HoodConstants.HOOD_MAX_POSITION;
             }
             if (robotServos.hood_5 != null) {
                 robotServos.hood_5.setPosition(hood_servoPosition);
-            } else {
-                telemetry.addData("ERROR", "Servo 'hood_5' not found. Check hardwareMap name and configuration.");
             }
+            // Mark as custom (not preset)
+            isHoodLongRange = false; // Could use a third state "custom" if needed
         }
-        prevDpadUpPressed = hoodIncrementPressed;
+        prevDpadRightPressed2 = gamepad2.dpad_right;
 
-        // Decrement hood position with D-Pad Down (GP1) or D-Pad Left (GP2)
-        if (hoodDecrementPressed && !prevDpadDownPressed) {
+        if (gamepad2.dpad_left && !prevDpadLeftPressed2) {
+            // Decrement hood position (decrease angle)
             hood_servoPosition -= HOOD_INCREMENT;
             if (hood_servoPosition < HoodConstants.HOOD_MIN_POSITION) {
                 hood_servoPosition = HoodConstants.HOOD_MIN_POSITION;
             }
             if (robotServos.hood_5 != null) {
                 robotServos.hood_5.setPosition(hood_servoPosition);
-            } else {
-                telemetry.addData("ERROR", "Servo 'hood_5' not found. Check hardwareMap name and configuration.");
             }
+            // Mark as custom (not preset)
+            isHoodLongRange = false;
         }
-        prevDpadDownPressed = hoodDecrementPressed;
+        prevDpadLeftPressed2 = gamepad2.dpad_left;
 
 
         // ========== TURRET SERVO CONTROL (gamepad1 D-Pad Left/Right) ==========
@@ -433,11 +449,6 @@ public class Decode_Teleop extends OpMode {
         if (intakeMode) {
             String currentColor = robotSensors.getColorName(robotSensors.color_f);
 
-            telemetry.addLine("═══ COLOR SENSOR STATE ═══");
-            telemetry.addData("📸 Current Sensor Reading", currentColor);
-            telemetry.addData("📋 Previous Color Stored", previousColor);
-            telemetry.addData("🔒 Transition Locked", colorTransitionDetected ? "YES" : "NO");
-
             // Helper method to check if color represents "no ball" state
             // Sensor can return "Black" or "None" when no ball is present
             boolean isNoBall = currentColor.equalsIgnoreCase("Black") || currentColor.equalsIgnoreCase("None");
@@ -449,19 +460,10 @@ public class Decode_Teleop extends OpMode {
             boolean isNotLocked = !colorTransitionDetected;
             boolean willTrigger = isPreviousBlack && isCurrentNotBlack && isNotLocked;
 
-            telemetry.addLine("🔍 TRANSITION CHECK:");
-            telemetry.addData("  Previous was Black?", isPreviousBlack ? "YES ✓" : "NO ✗ (was: " + previousColor + ")");
-            telemetry.addData("  Current is NOT Black?", isCurrentNotBlack ? "YES ✓ (is: " + currentColor + ")" : "NO ✗ (is: " + currentColor + ")");
-            telemetry.addData("  NOT Locked?", isNotLocked ? "YES ✓" : "NO ✗ (LOCKED)");
-            telemetry.addData("  → Will Trigger?", willTrigger ? "YES! 🚀" : "NO");
-
             // Detect color change from Black to any other color
             if (willTrigger) {
                 // Non-black color detected - advance to next position
                 colorTransitionDetected = true; // Lock to prevent multiple advances
-
-                telemetry.addLine("⚡ TRIGGERING AUTO-ADVANCE!");
-                telemetry.addData("From Index", currentTurretPositionIndex);
 
                 if (currentTurretPositionIndex < INTAKE_POSITIONS.length - 1) {
                     // Can advance to next position
@@ -471,39 +473,22 @@ public class Decode_Teleop extends OpMode {
 
                     if (robotServos.turret_1 != null) {
                         robotServos.turret_1.setPosition(currentTurretServoPosition);
-                        telemetry.addLine("🎨 AUTO-ADVANCE SUCCESS!");
-                        telemetry.addData("Color Detected", currentColor);
-                        telemetry.addData("Moved", "%d → %d", oldIndex, currentTurretPositionIndex);
-                        telemetry.addData("Position", "%.2f → %.2f", INTAKE_POSITIONS[oldIndex], currentTurretServoPosition);
                     }
-                } else {
-                    telemetry.addLine("⚠️ Already at last position - cannot auto-advance");
-                    telemetry.addData("Current Index", currentTurretPositionIndex);
                 }
             }
 
             // Update previousColor based on current sensor reading
-            telemetry.addLine("📝 UPDATING PREVIOUS COLOR:");
-            telemetry.addData("  Sensor reads", currentColor);
-
             // Check if sensor shows "no ball" state (Black or None)
             boolean currentIsNoBall = currentColor.equalsIgnoreCase("Black") || currentColor.equalsIgnoreCase("None");
 
             if (currentIsNoBall) {
                 // Color returned to "no ball" state - unlock and reset
-                if (colorTransitionDetected) {
-                    telemetry.addLine("  🔓 UNLOCKING - No ball detected (sensor: " + currentColor + ")");
-                }
                 colorTransitionDetected = false;
                 previousColor = "Black"; // Always use "Black" as the standard "no ball" reference
-                telemetry.addData("  → Setting previousColor to", "Black");
             } else {
                 // Ball detected - remember the color
                 previousColor = currentColor;
-                telemetry.addData("  → Setting previousColor to", currentColor);
             }
-
-            telemetry.addData("✅ Final previousColor", previousColor);
 
         } else {
             // Reset when not in intake mode
@@ -511,32 +496,72 @@ public class Decode_Teleop extends OpMode {
             colorTransitionDetected = false;
         }
 
+        // ========== TELEMETRY (Essential Info Only) ==========
 
-        // Color sensor detection with comprehensive info (FTC best practices)
+        // Color sensor detection (commented out for screen space - uncomment for debugging)
+        /*
         telemetry.addData("Color BR", robotSensors.getColorName(robotSensors.color_br));
         telemetry.addData("BR Info", robotSensors.getSensorInfo(robotSensors.color_br));
-
         telemetry.addData("Color BL", robotSensors.getColorName(robotSensors.color_bl));
         telemetry.addData("BL Info", robotSensors.getSensorInfo(robotSensors.color_bl));
-
         telemetry.addData("Color F", robotSensors.getColorName(robotSensors.color_f));
         telemetry.addData("F Info", robotSensors.getSensorInfo(robotSensors.color_f));
+        */
 
-        telemetry.addData("Turret Servo Position", currentTurretServoPosition);
-        telemetry.addData("Turret Position Index", currentTurretPositionIndex);
-        telemetry.addData("Hood Servo Position", hood_servoPosition);
-        telemetry.addData("Mode", intakeMode ? "INTAKE" : "LAUNCH");
+        // === SYSTEM STATUS ===
+        telemetry.addLine("━━━ ROBOT STATUS ━━━");
+        telemetry.addData("Mode", intakeMode ? "🔵 INTAKE" : "🔴 LAUNCH");
+        telemetry.addData("Turret Index", currentTurretPositionIndex);
+        telemetry.addData("Turret Pos", "%.2f", currentTurretServoPosition);
 
-        // Show auto-advance debug info when in INTAKE mode
+        // Auto-advance status (only in intake mode)
         if (intakeMode) {
-            telemetry.addLine("--- AUTO-ADVANCE DEBUG ---");
-            telemetry.addData("Current Color", robotSensors.getColorName(robotSensors.color_f));
-            telemetry.addData("Previous Color", previousColor);
-            telemetry.addData("Transition Locked", colorTransitionDetected ? "YES (waiting for black)" : "NO (ready)");
-            telemetry.addData("Can Advance", currentTurretPositionIndex < INTAKE_POSITIONS.length - 1 ? "YES" : "NO (at last position)");
+            String ballColor = robotSensors.getColorName(robotSensors.color_f);
+            telemetry.addData("Ball Detected", !ballColor.equalsIgnoreCase("Black") && !ballColor.equalsIgnoreCase("None") ? "✓ " + ballColor : "✗ Empty");
+            telemetry.addData("Auto-Advance", colorTransitionDetected ? "🔒 Locked" : "✓ Ready");
         }
 
-        // Show available positions for both modes
+        // Auto-Turret Motor tracking status
+        telemetry.addLine("━━━ AUTO TURRET ━━━");
+        telemetry.addData("Mode", autoTrackEnabled ? "🤖 AUTO" : "🎮 MANUAL");
+        if (autoTrackEnabled) {
+            telemetry.addData("Target Tag", currentTargetTagID);
+            telemetry.addData("Tracking", limelightManager.isAprilTagVisible(currentTargetTagID) ? "✓ LOCKED" : "✗ SEARCHING");
+        } else {
+            telemetry.addData("Control", "GP2 Sticks");
+        }
+
+        // Hood control information
+        telemetry.addLine("━━━ HOOD ━━━");
+        String hoodMode = "CUSTOM";
+        if (Math.abs(hood_servoPosition - HOOD_LONG_RANGE) < 0.01) {
+            hoodMode = "🎯 LONG";
+        } else if (Math.abs(hood_servoPosition - HOOD_SHORT_RANGE) < 0.01) {
+            hoodMode = "🎯 SHORT";
+        }
+        telemetry.addData("Hood Mode", hoodMode);
+        telemetry.addData("Hood Pos", "%.2f", hood_servoPosition);
+
+        // Shooter velocity information
+        telemetry.addLine("━━━ SHOOTER ━━━");
+        telemetry.addData("Shooter", isshooterActive ? "✓ ACTIVE" : "✗ OFF");
+        telemetry.addData("Mode", isHighVelocityMode ? "🚀 HIGH" : "🎯 LOW");
+        telemetry.addData("Target", (int)currentShooterVelocity);
+        telemetry.addData("Current", "%.0f", robotMotors.getShooterVelocity());
+
+        // Intake control information
+        telemetry.addLine("━━━ INTAKE ━━━");
+        telemetry.addData("Intake", isintakeActive ? "✓ ACTIVE" : "✗ OFF");
+        double currentIntakePower = -gamepad2.left_stick_y;
+        if (Math.abs(currentIntakePower) > 0.05) {
+            telemetry.addData("Control", currentIntakePower > 0 ? "GP2 IN" : "GP2 OUT");
+            telemetry.addData("Power", "%.2f", currentIntakePower);
+        } else if (isintakeActive) {
+            telemetry.addData("Control", "GP1 Toggle");
+        }
+
+        // Commented out for screen space - uncomment for debugging turret positions
+        /*
         telemetry.addLine("--- TURRET POSITIONS ---");
         telemetry.addData("INTAKE Positions",
             String.format("[0]=%.2f, [1]=%.2f, [2]=%.2f",
@@ -544,13 +569,18 @@ public class Decode_Teleop extends OpMode {
         telemetry.addData("LAUNCH Positions",
             String.format("[0]=%.2f, [1]=%.2f, [2]=%.2f",
                 LAUNCH_POSITIONS[0], LAUNCH_POSITIONS[1], LAUNCH_POSITIONS[2]));
+        */
 
-        // Shooter velocity information
-        telemetry.addLine("--- SHOOTER INFO ---");
-        telemetry.addData("Velocity Mode", isHighVelocityMode ? "HIGH (Long Distance)" : "LOW (Short Distance)");
-        telemetry.addData("Target Velocity", currentShooterVelocity);
-        telemetry.addData("Current Velocity", robotMotors.getShooterVelocity());
-        telemetry.addData("Shooter Active", isshooterActive ? "YES ✓" : "NO");
+        // Commented out for screen space - uncomment for debugging auto-advance
+        /*
+        if (intakeMode) {
+            telemetry.addLine("--- AUTO-ADVANCE DEBUG ---");
+            telemetry.addData("Current Color", robotSensors.getColorName(robotSensors.color_f));
+            telemetry.addData("Previous Color", previousColor);
+            telemetry.addData("Transition Locked", colorTransitionDetected ? "YES (waiting for black)" : "NO (ready)");
+            telemetry.addData("Can Advance", currentTurretPositionIndex < INTAKE_POSITIONS.length - 1 ? "YES" : "NO (at last position)");
+        }
+        */
 
         telemetry.update();
     }

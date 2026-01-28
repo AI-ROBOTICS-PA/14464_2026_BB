@@ -72,5 +72,13 @@ public class RobotMotors {
         intake.setPower(0);
     }
 
+    /**
+     * Set intake motor power (allows variable speed and reverse for outtake)
+     * @param power Motor power (-1.0 to 1.0, positive = intake, negative = outtake)
+     */
+    public void setIntakePower(double power) {
+        intake.setPower(power);
+    }
+
 
 }
