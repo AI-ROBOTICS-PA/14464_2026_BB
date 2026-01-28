@@ -513,6 +513,45 @@ Y = (VELOCITY TOGGLE)
 
 ---
 
+## 🎮 Controller Layout Visualization
+
+```mermaid
+graph TD
+    subgraph "Gamepad 1: Driver"
+        LStick1[Left Stick] -->|Drive| Drive[Field-Centric Drive]
+        RStick1[Right Stick X] -->|Rotate| Rotate[Turn Robot]
+        
+        Face1[Face Buttons] -->|Cross/A| Mode[Mode Switch: Intake/Launch]
+        Face1 -->|Triangle/Y| Vel[Velocity: High/Low]
+        
+        Bump1[Bumpers] -->|Left| Intk[Intake Toggle]
+        Bump1 -->|Right| Shoot[Shooter Toggle]
+        
+        Trig1[Right Trigger] -->|Proportional| Push[Ball Push Servo]
+        
+        DPad1[D-Pad] -->|Up/Down| Hood[Hood Angle ±0.01]
+        DPad1 -->|Left/Right| Turret[Turret Index]
+    end
+    
+    subgraph "Gamepad 2: Operator"
+        Face2[Face Buttons] -->|Cross/A| Auto[Enable Auto-Track]
+        Face2 -->|Circle/B| Manual[Manual Turret Mode]
+        Face2 -->|Triangle/Y| Tag[Switch Tag 20/24]
+        
+        RStick2[Right Stick Y] -->|Analog| ManAim[Manual Aiming]
+        
+        DPad2[D-Pad] -->|Right/Left| HoodOp[Hood Angle ±0.01]
+        DPad2 -->|Up/Down| FineAim[Fine Aim Adj ±20%]
+    end
+    
+    Mode -->|Updates| Turret
+    Mode -->|Updates| Vel
+    Auto -->|Locks| Lime[Limelight PID]
+    Manual -->|Unlocks| ManAim
+```
+
+---
+
 ## 📝 Control Priority & Edge Detection
 
 ### Edge Detection (Single Press)
@@ -634,4 +673,3 @@ SLOW_MODE_MULTIPLIER: 0.5 (50% speed)
 **Program:** Decode_Teleop.java  
 **Gamepad Support:** Dual (PlayStation + Xbox)  
 **Auto-Turret:** Enabled with Manual Override
-
