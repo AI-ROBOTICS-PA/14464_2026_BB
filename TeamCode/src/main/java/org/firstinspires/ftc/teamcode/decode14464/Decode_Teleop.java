@@ -131,13 +131,9 @@ public class Decode_Teleop extends OpMode {
         // Update Limelight data
         limelightManager.update();
 
-        // ========== POSITION LOCK (X/Square Button) ==========
-        // Toggle position lock with gamepad1 X/Square
-        boolean xPressed = gamepad2.right_bumper;
-        if (xPressed && !prevXPressed) {
-            positionLockEnabled = !positionLockEnabled;
-        }
-        prevXPressed = xPressed;
+        // ========== POSITION LOCK (Gamepad2 Right Bumper Hold) ==========
+        // Lock position only while right bumper is held
+        positionLockEnabled = gamepad2.right_bumper;
 
         if (positionLockEnabled) {
             // ENABLE: Lock robot at current position
