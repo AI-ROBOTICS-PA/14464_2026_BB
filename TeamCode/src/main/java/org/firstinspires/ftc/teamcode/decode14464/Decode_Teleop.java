@@ -80,6 +80,11 @@ public class Decode_Teleop extends OpMode {
     private String previousColor = "Black";
     private boolean colorTransitionDetected = false;
 
+    // Position Lock feature (X/Square button)
+    private boolean positionLockEnabled = false;
+    private Pose lockedPose = null;
+    private boolean prevXPressed = false;
+
     @Override
     public void init() {
         robotMotors.init(hardwareMap);
@@ -125,6 +130,35 @@ public class Decode_Teleop extends OpMode {
 
         // Update Limelight data
         limelightManager.update();
+
+        // ========== POSITION LOCK (X/Square Button) ==========
+        // Toggle position lock with gamepad1 X/Square
+        boolean xPressed = gamepad2.right_bumper;
+        if (xPressed && !prevXPressed) {
+            positionLockEnabled = !positionLockEnabled;
+        }
+        prevXPressed = xPressed;
+
+        if (positionLockEnabled) {
+            // ENABLE: Lock robot at current position
+            lockedPose = follower.getPose(); // Capture current position
+            follower.breakFollowing(); // Stop any ongoing path following
+            telemetry.addLine("🔒 POSITION LOCKED - Robot will resist being pushed!");
+        } else {
+            // DISABLE: Resume normal teleop drive
+            follower.startTeleopDrive();
+            lockedPose = null;
+            telemetry.addLine("🔓 Position lock DISABLED - Normal drive resumed");
+        }
+
+        // Update position lock if enabled
+        if (positionLockEnabled && lockedPose != null) {
+            // Continuously command robot to hold position
+            follower.holdPoint(
+                new com.pedropathing.geometry.BezierPoint(lockedPose),
+                Math.toRadians(5) // 5 degree heading tolerance
+            );
+        }
 
         // Intake control For player 1 with left bumper (toggle on/off)
         if (gamepad1.left_bumper && !leftBumped) {
@@ -191,8 +225,8 @@ public class Decode_Teleop extends OpMode {
         }
         prevYPressed = velocityTogglePressed;
 
-        // Drive control
-        if (!automatedDrive) {
+        // Drive control - disable when position lock is active
+        if (!automatedDrive && !positionLockEnabled) {
             if (!slowMode) follower.setTeleOpDrive(
                     -gamepad1.left_stick_y,
                     -gamepad1.left_stick_x,
@@ -241,11 +275,11 @@ public class Decode_Teleop extends OpMode {
             // Continuous control with right stick Y (primary)
             double stickControl = -gamepad2.right_stick_y * 0.6; // Inverted, 60% max speed
 
-            // Fine adjustment with D-Pad Up/Down (secondary)
+            // Fine adjustment with D-Pad Left/Right (secondary)
             double dpadControl = 0.0;
-            if (gamepad2.dpad_up) {
+            if (gamepad2.dpad_right) {
                 dpadControl = 0.2; // Fine control positive
-            } else if (gamepad2.dpad_down) {
+            } else if (gamepad2.dpad_left) {
                 dpadControl = -0.2; // Fine control negative
             }
 
@@ -344,8 +378,8 @@ public class Decode_Teleop extends OpMode {
         }
         prevDpadDownPressed = gamepad1.dpad_down;
 
-        // GAMEPAD 2: FINE CONTROL (LEFT/RIGHT for custom positions)
-        if (gamepad2.dpad_right && !prevDpadRightPressed2) {
+        // GAMEPAD 2: FINE CONTROL (UP/DOWN for custom positions)
+        if (gamepad2.dpad_up && !prevDpadRightPressed2) {
             // Increment hood position (increase angle)
             hood_servoPosition += HOOD_INCREMENT;
             if (hood_servoPosition > HoodConstants.HOOD_MAX_POSITION) {
@@ -357,9 +391,9 @@ public class Decode_Teleop extends OpMode {
             // Mark as custom (not preset)
             isHoodLongRange = false; // Could use a third state "custom" if needed
         }
-        prevDpadRightPressed2 = gamepad2.dpad_right;
+        prevDpadRightPressed2 = gamepad2.dpad_up;
 
-        if (gamepad2.dpad_left && !prevDpadLeftPressed2) {
+        if (gamepad2.dpad_down && !prevDpadLeftPressed2) {
             // Decrement hood position (decrease angle)
             hood_servoPosition -= HOOD_INCREMENT;
             if (hood_servoPosition < HoodConstants.HOOD_MIN_POSITION) {
@@ -371,7 +405,7 @@ public class Decode_Teleop extends OpMode {
             // Mark as custom (not preset)
             isHoodLongRange = false;
         }
-        prevDpadLeftPressed2 = gamepad2.dpad_left;
+        prevDpadLeftPressed2 = gamepad2.dpad_down;
 
 
         // ========== TURRET SERVO CONTROL (gamepad1 D-Pad Left/Right) ==========
@@ -511,6 +545,14 @@ public class Decode_Teleop extends OpMode {
         // === SYSTEM STATUS ===
         telemetry.addLine("━━━ ROBOT STATUS ━━━");
         telemetry.addData("Mode", intakeMode ? "🔵 INTAKE" : "🔴 LAUNCH");
+
+        // Position Lock status
+        telemetry.addData("Position Lock", positionLockEnabled ? "🔒 LOCKED" : "🔓 FREE");
+        if (positionLockEnabled && lockedPose != null) {
+            telemetry.addData("Locked at", "X:%.1f Y:%.1f H:%.0f°",
+                lockedPose.getX(), lockedPose.getY(), Math.toDegrees(lockedPose.getHeading()));
+        }
+
         telemetry.addData("Turret Index", currentTurretPositionIndex);
         telemetry.addData("Turret Pos", "%.2f", currentTurretServoPosition);
 
