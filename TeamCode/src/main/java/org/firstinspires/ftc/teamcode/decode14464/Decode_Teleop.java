@@ -133,21 +133,20 @@ public class Decode_Teleop extends OpMode {
 
         // ========== POSITION LOCK (Gamepad2 Right Bumper Hold) ==========
         // Lock position only while right bumper is held
+        boolean wasLocked = positionLockEnabled;
         positionLockEnabled = gamepad2.right_bumper;
 
-        if (positionLockEnabled) {
-            // ENABLE: Lock robot at current position
-            lockedPose = follower.getPose(); // Capture current position
-            follower.breakFollowing(); // Stop any ongoing path following
-            telemetry.addLine("🔒 POSITION LOCKED - Robot will resist being pushed!");
-        } else {
-            // DISABLE: Resume normal teleop drive
+        if (positionLockEnabled && !wasLocked) {
+            // ENABLE: Just started locking - capture position and break following
+            lockedPose = follower.getPose();
+            follower.breakFollowing();
+        } else if (!positionLockEnabled && wasLocked) {
+            // DISABLE: Just released lock - resume normal teleop drive
             follower.startTeleopDrive();
             lockedPose = null;
-            telemetry.addLine("🔓 Position lock DISABLED - Normal drive resumed");
         }
 
-        // Update position lock if enabled
+        // Update position lock if currently enabled
         if (positionLockEnabled && lockedPose != null) {
             // Continuously command robot to hold position
             follower.holdPoint(
