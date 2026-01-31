@@ -1,7 +1,9 @@
 package org.firstinspires.ftc.teamcode.decode14464;
 
 import com.pedropathing.follower.Follower;
+import com.pedropathing.geometry.BezierLine;
 import com.pedropathing.geometry.Pose;
+import com.pedropathing.paths.Path;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
@@ -30,6 +32,7 @@ public class Auto_Red_Far extends OpMode {
     // Field positions (BLUE ALLIANCE - CLOSE STARTING POSITION)
     // All measurements in INCHES
     private static final Pose startPose = new Pose(-12, -63, Math.toRadians(90)); // Close blue starting position
+    private static final Pose parkPose = new Pose(10, 60);
 
 
     // Shooting parameters (adjusted for close position)
@@ -41,8 +44,11 @@ public class Auto_Red_Far extends OpMode {
     private static final int INTAKE_DELAY_MS = 1000; // Time to intake sample
     private static final double AUTO_TRACK_TIMEOUT = 3.0; // Max time to lock onto target
 
-    public void buildPaths() {
+    private Path park;
 
+    public void buildPaths() {
+                park = new Path(new BezierLine(startPose, parkPose));
+                park.setLinearHeadingInterpolation(startPose.getHeading(), parkPose.getHeading());
     }
 
     @Override
@@ -150,9 +156,15 @@ public class Auto_Red_Far extends OpMode {
             case 10:
                 if (actionTimer.getElapsedTimeSeconds() >0.5){
                     robotServos.ballpush_4.setPosition(robotServos.ballpush_initial_position);
+                    actionTimer.resetTimer();
                     pathState = 11;
                 }
                 break;
+            case 11:
+                if(actionTimer.getElapsedTimeSeconds() > 1){
+                    robotMotors.stopShooter();
+                    follower.followPath(park, true);
+                }
 
         }
     }
