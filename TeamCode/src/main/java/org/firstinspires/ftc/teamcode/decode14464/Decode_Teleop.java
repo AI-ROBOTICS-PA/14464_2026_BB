@@ -116,11 +116,61 @@ public class Decode_Teleop extends OpMode {
     @Override
     public void start() {
         follower.startTeleopDrive();
-
     }
 
+    @Override
     public void stop() {
-        robotServos.colorservo.setPosition(0);
+        // Stop all motors immediately
+        if (robotMotors.turret != null) {
+            robotMotors.turret.setPower(0);
+        }
+        if (robotMotors.intake != null) {
+            robotMotors.stopIntake();
+        }
+        if (robotMotors.flywheelMotor != null) {
+            robotMotors.stopShooter();
+        }
+
+        // STEP 1: Move all servos to safe neutral positions FIRST
+        if (robotServos.colorservo != null) {
+            robotServos.colorservo.setPosition(0.5); // Neutral position
+        }
+        if (robotServos.turret_1 != null) {
+            robotServos.turret_1.setPosition(0.5); // Mid-range neutral position
+        }
+        if (robotServos.hood_5 != null) {
+            robotServos.hood_5.setPosition(HoodConstants.HOME_POSITION); // Safe home position
+        }
+        if (robotServos.ballpush_4 != null) {
+            robotServos.ballpush_4.setPosition(robotServos.ballpush_initial_position);
+        }
+
+        // STEP 2: Small delay to let servos reach position before disabling PWM
+        try {
+            Thread.sleep(100); // 100ms for servos to settle
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
+        // STEP 3: Disable PWM on ALL servos to prevent flickering
+        // This completely cuts power and prevents electrical interference
+        if (robotServos.turret_1 != null) {
+            robotServos.turret_1.getController().pwmDisable();
+        }
+        if (robotServos.hood_5 != null) {
+            robotServos.hood_5.getController().pwmDisable();
+        }
+        if (robotServos.colorservo != null) {
+            robotServos.colorservo.getController().pwmDisable();
+        }
+        if (robotServos.ballpush_4 != null) {
+            robotServos.ballpush_4.getController().pwmDisable();
+        }
+
+        // Stop follower
+        if (follower != null) {
+            follower.breakFollowing();
+        }
     }
 
     @Override

@@ -2,6 +2,7 @@ package org.firstinspires.ftc.teamcode.decode14464;
 
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
+import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 import com.qualcomm.robotcore.hardware.PIDFCoefficients;
 
@@ -13,7 +14,8 @@ public class RobotMotors {
 
     public void init(HardwareMap hardwareMap) {
         intake = hardwareMap.get(DcMotor.class, "intake");
-       // shooter = hardwareMap.get(DcMotorEx.class, "shooter");  // Use DcMotorEx for velocity control
+        intake.setDirection(DcMotor.Direction.REVERSE);
+        // shooter = hardwareMap.get(DcMotorEx.class, "shooter");  // Use DcMotorEx for velocity control
         turret = hardwareMap.get(DcMotorEx.class, "turret");
         // Initialize the flywheel motor (using your "shooter" motor)
         flywheelMotor = hardwareMap.get(DcMotorEx.class, "shooter");

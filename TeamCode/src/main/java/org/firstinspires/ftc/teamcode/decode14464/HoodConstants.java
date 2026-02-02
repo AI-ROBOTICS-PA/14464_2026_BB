@@ -18,13 +18,13 @@ public class HoodConstants {
      * Minimum servo position (highest hood angle)
      * When servo is at 0.28, hood is at maximum angle
      */
-    public static double HOOD_MIN_POSITION = 0.28;
+    public static double HOOD_MIN_POSITION = .28;
 
     /**
      * Maximum servo position (lowest hood angle)
      * When servo is at 0.80, hood is at minimum angle
      */
-    public static double HOOD_MAX_POSITION = 0.80;
+    public static double HOOD_MAX_POSITION = .82;
 
     // ========== DISTANCE MAPPING ==========
     /**
