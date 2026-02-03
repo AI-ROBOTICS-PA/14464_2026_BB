@@ -50,7 +50,7 @@ public class ShootingSystem {
     public void init(HardwareMap hardwareMap, AutoIntakeSystem intakeSystem, LocalizationSystem localization) {
         flywheelMotor = hardwareMap.get(DcMotorEx.class, "shooter");
         intakeMotor = hardwareMap.get(DcMotor.class, "intake");
-        ballPushServo = hardwareMap.get(Servo.class, "ballpush_4");
+        ballPushServo = hardwareMap.get(Servo.class, "ballpush_2");
 
         this.intakeSystem = intakeSystem;
         this.localization = localization;
@@ -350,6 +350,27 @@ public class ShootingSystem {
      */
     public void retractBall() {
         ballPushServo.setPosition(RobotConstants.BallPush.RETRACT_POSITION);
+    }
+
+    /**
+     * Set ball push servo to specific position (for auto-shoot control)
+     * @param position Servo position (0.0 to 1.0)
+     */
+    public void setBallPushPosition(double position) {
+        if (ballPushServo != null) {
+            ballPushServo.setPosition(position);
+        }
+    }
+
+    /**
+     * Get current ball push servo position
+     * @return Current servo position (0.0 to 1.0)
+     */
+    public double getBallPushPosition() {
+        if (ballPushServo != null) {
+            return ballPushServo.getPosition();
+        }
+        return 0.0;
     }
 }
 

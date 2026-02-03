@@ -67,16 +67,16 @@ public class RobotConstants {
         public static final double[] INTAKE_POSITIONS = {0.07, 0.44, 0.81};
 
         // Launch mode positions (3 slots)
-        public static final double[] LAUNCH_POSITIONS = {0.17, 0.54, 0.91};
+        public static final double[] LAUNCH_POSITIONS = {0.165, 0.535, 0.905};
 
         public static final double NEUTRAL_POSITION = 0.5;
     }
 
     // ==================== BALL PUSH SERVO CONSTANTS ====================
     public static final class BallPush {
-        public static final double INITIAL_POSITION = 0.50;
+        public static final double INITIAL_POSITION = 0.49;
         public static final double PUSH_POSITION = 0.77;
-        public static final double RETRACT_POSITION = 0.50;
+        public static final double RETRACT_POSITION = 0.49;
 
         public static final long PUSH_DELAY_MS = 200;  // Time to push ball
     }

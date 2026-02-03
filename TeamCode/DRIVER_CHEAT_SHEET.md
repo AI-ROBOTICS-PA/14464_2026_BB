@@ -5,42 +5,43 @@
 
 ## ⚡ QUICK CONTROLS
 
-| Button | Action |
-|--------|--------|
-| **A** | 🔄 Switch Intake ⟷ Launch |
-| **B** | 🎯 Auto-Turret ON/OFF |
-| **X** | 📐 Auto-Hood ON/OFF |
-| **Y** | 🔥 Shooter Motor ON/OFF |
-| **L1** | ⚡ FULL AUTO (all features) |
-| **R1** | 💥 SHOOT 3 BALLS |
+| Xbox | PlayStation | Action |
+|------|-------------|--------|
+| **A** | **✕ Cross** | 🔄 Switch Intake ⟷ Launch |
+| **B** | **○ Circle** | 🎯 Auto-Turret ON/OFF |
+| **X** | **□ Square** | 📐 Auto-Hood ON/OFF |
+| **Y** | **△ Triangle** | 🔥 Shooter Motor ON/OFF |
+| **LB** | **L1** | ⚡ FULL AUTO (all features) |
+| **RB** | **R1** | 💥 SHOOT 3 BALLS |
+| **D-Pad ←→** | **D-Pad ←→** | 🔧 Manual Turret Servo |
 
 ---
 
 ## 🏆 FAST CYCLE (20 sec)
 
 ### **COLLECT**
-1. Press **A** (Intake mode)
+1. Press **A / Cross** (Intake mode)
 2. Drive to balls
 3. Auto-advances on detection
 
 ### **SHOOT**
-1. Press **A** (Launch mode)
-2. Press **L1** (Full auto)
+1. Press **A / Cross** (Launch mode)
+2. Press **LB / L1** (Full auto)
 3. Drive near goal
-4. Press **R1** (Shoot!)
+4. Press **RB / R1** (Shoot!)
 
 ---
 
 ## 🎯 THE EASY WAY
 
 ```
-1. Press L1 (Left Bumper)
+1. Press LB / L1 (Left Bumper)
    → Everything enabled!
    
 2. Drive anywhere on field
    → Robot aims automatically
    
-3. Press R1 (Right Bumper)
+3. Press RB / R1 (Right Bumper)
    → All 3 balls shoot!
 ```
 

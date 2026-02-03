@@ -57,13 +57,13 @@ public class Decode_Teleop extends OpMode {
 
     // Define discrete positions for each mode
     private final double[] INTAKE_POSITIONS = {0.07, 0.44, 0.81};
-    private final double[] LAUNCH_POSITIONS = {0.17, 0.54, 0.91};
+    private final double[] LAUNCH_POSITIONS = {0.165, 0.535, 0.905};
 
     // Current position index in the respective array
     private int currentTurretPositionIndex = 0;
 
     // Current actual servo position
-    private double currentTurretServoPosition = 0.17; // Start in launch mode at first position
+    private double currentTurretServoPosition = 0.165; // Start in launch mode at first position
 
     private boolean leftBumped;
     private boolean isintakeActive = false;

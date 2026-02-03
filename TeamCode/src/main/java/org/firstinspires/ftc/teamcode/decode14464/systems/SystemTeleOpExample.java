@@ -23,22 +23,50 @@ public class SystemTeleOpExample extends OpMode {
     private boolean prevRightBumper = false;
     private boolean prevLeftBumper = false;
 
+    // Intake motor state - AUTO START
+    private boolean intakeMotorOn = true; // Start intake ON by default
+
+    // Shooter motor state - AUTO START with high velocity
+    private boolean shooterMotorOn = true; // Start shooter ON by default
+
+    // Shooter velocity modes (LOW values for testing)
+    private static final double HIGH_VELOCITY = 460;  // Testing velocity
+    private static final double LOW_VELOCITY = 100;   // Testing velocity
+    private boolean isHighVelocityMode = true; // Start with high velocity
+
+    // Auto-shoot state machine - hybrid approach with minimal timing
+    private enum AutoShootState {
+        IDLE,
+        PUSH,           // Push ball forward
+        WAIT_PUSH,      // Wait for push servo to reach position
+        RETRACT,        // Retract ball push
+        WAIT_RETRACT,   // Wait for retract to complete
+        ADVANCE         // Move turret backwards
+    }
+    private AutoShootState autoShootState = AutoShootState.IDLE;
+    private int ballsShot = 0;
+    private int ballsToShoot = 0;
+    private long stateStartTime = 0;
+    private boolean turretMoved = false; // Track if turret already moved this cycle
+
     @Override
     public void init() {
         // Initialize robot system with starting pose
         robot = new RobotSystem();
         robot.init(hardwareMap, new Pose(0, 0, 0));
 
+
         telemetry.addLine("✅ Robot System Initialized");
+        telemetry.addLine("⏸️ Motors will start when you press START");
         telemetry.addLine();
         telemetry.addLine("Controls:");
-        telemetry.addLine("  A: Toggle Intake/Launch Mode");
-        telemetry.addLine("  B: Toggle Auto-Turret");
-        telemetry.addLine("  X: Toggle Auto-Hood");
-        telemetry.addLine("  Y: Toggle Shooter");
-        telemetry.addLine("  Right Bumper: Trigger Auto-Shoot (3 balls)");
-        telemetry.addLine("  Left Bumper: Enable Full Auto Mode");
+        telemetry.addLine("  A/Cross: Toggle Intake/Launch Mode");
+        telemetry.addLine("  Y/Triangle: Toggle Shooter Velocity (460/100)");
+        telemetry.addLine("  Right Bumper: AUTO-SHOOT 3 Balls");
+        telemetry.addLine("  Left Stick Y (GP2): Variable Intake (for outtake)");
         telemetry.addLine("  DPAD Left/Right: Manual turret servo");
+        telemetry.addLine();
+        telemetry.addLine("Auto-Turret & Auto-Hood: DISABLED for basic testing");
         telemetry.update();
     }
 
@@ -46,6 +74,17 @@ public class SystemTeleOpExample extends OpMode {
     public void start() {
         // Start teleop drive
         robot.localization.getFollower().startTeleopDrive();
+
+        // START MOTORS when match begins (not during init)
+
+        // Start intake motor
+        robot.autoIntake.startIntakeMotor();
+        intakeMotorOn = true;
+
+        // Start shooter at high velocity (1460)
+        robot.shooting.startShooter(HIGH_VELOCITY);
+        shooterMotorOn = true;
+        isHighVelocityMode = true;
     }
 
     @Override
@@ -63,41 +102,65 @@ public class SystemTeleOpExample extends OpMode {
 
         // ========== BUTTON CONTROLS ==========
 
-        // A: Toggle Intake/Launch Mode
-        if (gamepad1.a && !prevA) {
+        // A/Cross: Toggle Intake/Launch Mode (support both Xbox and PlayStation)
+        boolean aPressed = gamepad1.a || gamepad1.cross;
+        if (aPressed && !prevA) {
             robot.autoIntake.toggleMode();
         }
-        prevA = gamepad1.a;
+        prevA = aPressed;
 
-        // B: Toggle Auto-Turret
-        if (gamepad1.b && !prevB) {
+        // B/Circle: Toggle Auto-Turret [COMMENTED OUT FOR BASIC TESTING]
+        /*
+        boolean bPressed = gamepad1.b || gamepad1.circle;
+        if (bPressed && !prevB) {
             robot.autoTurret.toggle();
         }
-        prevB = gamepad1.b;
+        prevB = bPressed;
+        */
 
-        // X: Toggle Auto-Hood
-        if (gamepad1.x && !prevX) {
+        // X/Square: Toggle Auto-Hood [COMMENTED OUT FOR BASIC TESTING]
+        /*
+        boolean xPressed = gamepad1.x || gamepad1.square;
+        if (xPressed && !prevX) {
             robot.autoHood.toggleAutoAdjust();
         }
-        prevX = gamepad1.x;
+        prevX = xPressed;
+        */
 
-        // Y: Toggle Shooter
-        if (gamepad1.y && !prevY) {
-            if (robot.shooting.isShooterActive()) {
-                robot.shooting.stopShooter();
+        // Y/Triangle: Toggle Shooter Velocity between 1460 and 1100 (support both Xbox and PlayStation)
+        boolean yPressed = gamepad1.y || gamepad1.triangle;
+        if (yPressed && !prevY) {
+            if (isHighVelocityMode) {
+                // Switch to low velocity
+                robot.shooting.startShooter(LOW_VELOCITY);
+                isHighVelocityMode = false;
             } else {
-                robot.shooting.startShooterAuto(); // Distance-based velocity
+                // Switch to high velocity
+                robot.shooting.startShooter(HIGH_VELOCITY);
+                isHighVelocityMode = true;
             }
         }
-        prevY = gamepad1.y;
+        prevY = yPressed;
 
-        // Right Bumper: Trigger Auto-Shoot (3 balls)
+        // Right Bumper: Trigger Auto-Shoot (hybrid timing - fast but reliable)
         if (gamepad1.right_bumper && !prevRightBumper) {
-            robot.shooting.triggerAutoShoot();
+            // Only start if in LAUNCH mode and not already shooting
+            if (!robot.autoIntake.isIntakeMode() && autoShootState == AutoShootState.IDLE) {
+                // Calculate balls to shoot: position 0=1 ball, 1=2 balls, 2=3 balls
+                ballsToShoot = robot.autoIntake.getCurrentIndex() + 1;
+                ballsShot = 0;
+                autoShootState = AutoShootState.PUSH;
+                stateStartTime = System.currentTimeMillis();
+                telemetry.addLine("🎯 AUTO-SHOOT STARTED! Shooting " + ballsToShoot + " balls from position " + robot.autoIntake.getCurrentIndex());
+            }
         }
         prevRightBumper = gamepad1.right_bumper;
 
-        // Left Bumper: Enable Full Auto Mode (turret + hood)
+        // ========== SIMPLE AUTO-SHOOT STATE MACHINE ==========
+        updateAutoShoot();
+
+        // Left Bumper: Enable Full Auto Mode [COMMENTED OUT - Auto features disabled for testing]
+        /*
         if (gamepad1.left_bumper && !prevLeftBumper) {
             if (robot.autoTurret.isEnabled() && robot.autoHood.isAutoAdjustEnabled()) {
                 robot.disableFullAuto();
@@ -106,6 +169,7 @@ public class SystemTeleOpExample extends OpMode {
             }
         }
         prevLeftBumper = gamepad1.left_bumper;
+        */
 
         // DPAD Left/Right: Manual turret servo control
         if (gamepad1.dpad_left && !prevDpadLeft) {
@@ -118,25 +182,56 @@ public class SystemTeleOpExample extends OpMode {
         }
         prevDpadRight = gamepad1.dpad_right;
 
+        // ========== INTAKE MOTOR CONTROLS ==========
+
+        // Intake motor runs continuously as part of the intake system
+        // Only Gamepad 2 can override for variable speed (e.g., outtake)
+
+        // Left Stick Y (Gamepad 2): Variable intake control (for outtake if needed)
+        if (Math.abs(gamepad2.left_stick_y) > 0.1) {
+            robot.autoIntake.setIntakeMotorPower(-gamepad2.left_stick_y);
+            intakeMotorOn = (Math.abs(gamepad2.left_stick_y) > 0.1);
+        } else {
+            // Return to normal intake operation
+            if (!intakeMotorOn) {
+                robot.autoIntake.startIntakeMotor();
+                intakeMotorOn = true;
+            }
+        }
+
+        // ========== SHOOTER MOTOR CONTROLS ==========
+
+        // Shooter motor runs continuously - Y button only changes velocity
+        // No manual on/off control - shooter is always running when program is active
+
         // ========== TELEMETRY ==========
         telemetry.addLine("━━━ POSITION ━━━");
         telemetry.addData("X, Y", "%.1f, %.1f", robot.localization.getX(), robot.localization.getY());
         telemetry.addData("Heading", "%.1f°", robot.localization.getHeadingDegrees());
         telemetry.addLine();
 
+        // AUTO SYSTEMS - COMMENTED OUT FOR BASIC TESTING
+        /*
         telemetry.addLine("━━━ AUTO SYSTEMS ━━━");
         telemetry.addData("Auto-Turret", robot.autoTurret.isEnabled() ? "✓ ON" : "✗ OFF");
         telemetry.addData("Auto-Hood", robot.autoHood.isAutoAdjustEnabled() ? "✓ ON" : "✗ OFF");
         telemetry.addData("Turret Angle", "%.1f°", robot.autoTurret.getTurretAngle());
         telemetry.addData("On Target", robot.autoTurret.isOnTarget() ? "✓ YES" : "✗ NO");
         telemetry.addLine();
+        */
 
         telemetry.addLine("━━━ SHOOTING ━━━");
         telemetry.addData("Distance to Goal", "%.1f in", robot.getDistanceToGoal());
-        telemetry.addData("Shooter", robot.shooting.isShooterActive() ? "✓ ACTIVE" : "✗ OFF");
-        telemetry.addData("Velocity", "%.0f", robot.shooting.getCurrentVelocity());
-        telemetry.addData("Auto-Shoot", robot.shooting.isAutoShootingInProgress() ? "🎯 SHOOTING" : "Idle");
-        telemetry.addData("State", robot.shooting.getCurrentState());
+        telemetry.addData("Shooter Motor", shooterMotorOn ? "✓ ON" : "✗ OFF");
+        telemetry.addData("Velocity Mode", isHighVelocityMode ? "HIGH (460)" : "LOW (100)");
+        telemetry.addData("Current Velocity", "%.0f", robot.motors.getShooterVelocity());
+        telemetry.addData("Auto-Shoot", autoShootState == AutoShootState.IDLE ? "Idle" : "🎯 SHOOTING");
+        telemetry.addData("Balls Shot", ballsShot + "/" + ballsToShoot);
+        telemetry.addData("State", autoShootState.toString());
+        if (autoShootState != AutoShootState.IDLE) {
+            long elapsed = System.currentTimeMillis() - stateStartTime;
+            telemetry.addData("State Elapsed", elapsed + "ms");
+        }
         telemetry.addLine();
 
         telemetry.addLine("━━━ INTAKE ━━━");
@@ -144,8 +239,85 @@ public class SystemTeleOpExample extends OpMode {
         telemetry.addData("Slot", robot.autoIntake.getCurrentIndex());
         telemetry.addData("Ball Detected", robot.autoIntake.isBallDetected() ? "✓ YES" : "✗ NO");
         telemetry.addData("Color", robot.autoIntake.getDetectedColor());
+        telemetry.addData("Intake Motor", intakeMotorOn ? "✓ ON" : "✗ OFF");
+        telemetry.addData("GP2 Intake Power", "%.2f", -gamepad2.left_stick_y);
 
         telemetry.update();
+    }
+
+    /**
+     * Hybrid auto-shoot - uses reliable timing for servo movement
+     * Increased timing margins for consistency
+     */
+    private void updateAutoShoot() {
+        if (autoShootState == AutoShootState.IDLE) {
+            return; // Not shooting
+        }
+
+        long elapsed = System.currentTimeMillis() - stateStartTime;
+
+        switch (autoShootState) {
+            case PUSH:
+                // Command servo to push position
+                robot.shooting.setBallPushPosition(RobotConstants.BallPush.PUSH_POSITION); // 0.77
+                telemetry.addLine("→ Pushing ball " + (ballsShot + 1));
+                autoShootState = AutoShootState.WAIT_PUSH;
+                stateStartTime = System.currentTimeMillis();
+                break;
+
+            case WAIT_PUSH:
+                // Wait for servo to push ball - optimized timing
+                if (elapsed > 300) { // 300ms for servo to push forward
+                    telemetry.addLine("✓ Ball " + (ballsShot + 1) + " pushed!");
+                    ballsShot++;
+                    autoShootState = AutoShootState.RETRACT;
+                    stateStartTime = System.currentTimeMillis();
+                }
+                break;
+
+            case RETRACT:
+                // Command servo to retract position
+                robot.shooting.setBallPushPosition(RobotConstants.BallPush.RETRACT_POSITION); // 0.50
+                telemetry.addLine("→ Retracting...");
+                autoShootState = AutoShootState.WAIT_RETRACT;
+                stateStartTime = System.currentTimeMillis();
+                break;
+
+            case WAIT_RETRACT:
+                // Wait for servo to fully retract - CRITICAL for safety, keep longer
+                if (elapsed > 400) { // 400ms - ensures ball push is clear before turret moves
+                    telemetry.addLine("✓ Retracted, safe to move");
+
+                    // Check if we have more balls to shoot
+                    if (ballsShot < ballsToShoot) {
+                        // More balls to shoot - advance turret
+                        autoShootState = AutoShootState.ADVANCE;
+                        stateStartTime = System.currentTimeMillis();
+                        turretMoved = false; // Reset flag for new advance
+                    } else {
+                        // All balls shot!
+                        telemetry.addLine("✅ All " + ballsShot + " balls shot! Complete.");
+                        autoShootState = AutoShootState.IDLE;
+                    }
+                }
+                break;
+
+            case ADVANCE:
+                // Move turret backwards to previous slot - ONLY ONCE using flag
+                if (!turretMoved) {
+                    robot.autoIntake.moveToPreviousSlot();
+                    turretMoved = true;
+                    telemetry.addLine("→ Moving to slot " + robot.autoIntake.getCurrentIndex());
+                }
+
+                // Wait for turret servo to move
+                if (elapsed > 300) { // 300ms for turret to reach next position
+                    telemetry.addLine("✓ Ready at slot " + robot.autoIntake.getCurrentIndex());
+                    autoShootState = AutoShootState.PUSH;
+                    stateStartTime = System.currentTimeMillis();
+                }
+                break;
+        }
     }
 
     @Override

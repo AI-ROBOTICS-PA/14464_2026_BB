@@ -2,6 +2,7 @@ package org.firstinspires.ftc.teamcode.decode14464.systems;
 
 import com.pedropathing.geometry.Pose;
 import com.qualcomm.robotcore.hardware.HardwareMap;
+import org.firstinspires.ftc.teamcode.decode14464.RobotMotors;
 
 /**
  * Master Robot System
@@ -15,6 +16,7 @@ public class RobotSystem {
     public AutoIntakeSystem autoIntake;
     public ShootingSystem shooting;
     public LEDSystem led;
+    public RobotMotors motors; // Added for direct motor control
 
     /**
      * Initialize all systems
@@ -23,6 +25,10 @@ public class RobotSystem {
      */
     public void init(HardwareMap hardwareMap, Pose startPose) {
         // Initialize systems in dependency order
+
+        // 0. Robot Motors (for direct control)
+        motors = new RobotMotors();
+        motors.init(hardwareMap);
 
         // 1. Localization (no dependencies)
         localization = new LocalizationSystem();
@@ -74,6 +80,8 @@ public class RobotSystem {
         if (autoTurret != null) autoTurret.stop();
         if (shooting != null) shooting.stopShooter();
         if (shooting != null) shooting.stopAutoShoot();
+        if (autoIntake != null) autoIntake.stopAll(); // Stop intake motor through AutoIntakeSystem
+        if (motors != null) motors.stopShooter();
         if (led != null) led.turnOff();
     }
 

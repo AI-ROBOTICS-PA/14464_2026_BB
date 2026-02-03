@@ -1,18 +1,21 @@
 package org.firstinspires.ftc.teamcode.decode14464.systems;
 
 import com.qualcomm.robotcore.hardware.ColorSensor;
+import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 import com.qualcomm.robotcore.hardware.Servo;
 
 /**
  * Feature 4: Auto-Intake System
- * Automatically advances turret servo to next slot when ball is detected
+ * Controls intake motor, turret servo, and automatically advances when ball is detected
  */
 public class AutoIntakeSystem {
     private Servo turretServo;
     private ColorSensor colorSensorF;
+    private DcMotor intakeMotor;
 
     private boolean isIntakeMode = false;
+    private boolean isIntakeMotorRunning = true; // Auto-start intake motor
     private int currentIndex = 0;
     private String previousColor = RobotConstants.ColorSensor.NO_BALL_COLOR_1;
     private boolean transitionLocked = false;
@@ -23,9 +26,16 @@ public class AutoIntakeSystem {
     public void init(HardwareMap hardwareMap) {
         turretServo = hardwareMap.get(Servo.class, "turret_1");
         colorSensorF = hardwareMap.get(ColorSensor.class, "color_f");
+        intakeMotor = hardwareMap.get(DcMotor.class, "intake");
+
+        // Configure intake motor
+        intakeMotor.setDirection(DcMotor.Direction.REVERSE);
+        intakeMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
         // Start in launch mode at first position
         setLaunchMode();
+
+        // DON'T auto-start intake motor - wait for start() method
     }
 
     /**
@@ -211,6 +221,75 @@ public class AutoIntakeSystem {
      */
     public String getDetectedColor() {
         return getColorName();
+    }
+
+    /**
+     * Reset to first launch position (for auto-shoot)
+     * Call this before starting auto-shoot to ensure we start from position 0
+     */
+    public void resetToFirstLaunchPosition() {
+        if (!isIntakeMode) {
+            currentIndex = 0;
+            turretServo.setPosition(RobotConstants.TurretServo.LAUNCH_POSITIONS[0]);
+        }
+    }
+
+    // ========== INTAKE MOTOR CONTROL ==========
+
+    /**
+     * Start intake motor
+     */
+    public void startIntakeMotor() {
+        if (intakeMotor != null) {
+            intakeMotor.setPower(1.0);
+            isIntakeMotorRunning = true;
+        }
+    }
+
+    /**
+     * Stop intake motor
+     */
+    public void stopIntakeMotor() {
+        if (intakeMotor != null) {
+            intakeMotor.setPower(0);
+            isIntakeMotorRunning = false;
+        }
+    }
+
+    /**
+     * Set intake motor power (for variable speed control)
+     * @param power Motor power (-1.0 to 1.0, positive = intake, negative = outtake)
+     */
+    public void setIntakeMotorPower(double power) {
+        if (intakeMotor != null) {
+            intakeMotor.setPower(power);
+            isIntakeMotorRunning = (Math.abs(power) > 0.01);
+        }
+    }
+
+    /**
+     * Toggle intake motor on/off
+     */
+    public void toggleIntakeMotor() {
+        if (isIntakeMotorRunning) {
+            stopIntakeMotor();
+        } else {
+            startIntakeMotor();
+        }
+    }
+
+    /**
+     * Check if intake motor is running
+     */
+    public boolean isIntakeMotorRunning() {
+        return isIntakeMotorRunning;
+    }
+
+    /**
+     * Stop all intake system components (for emergency stop)
+     */
+    public void stopAll() {
+        stopIntakeMotor();
     }
 }
 
