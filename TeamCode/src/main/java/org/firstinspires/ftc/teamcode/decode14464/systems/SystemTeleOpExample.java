@@ -49,6 +49,10 @@ public class SystemTeleOpExample extends OpMode {
     private long stateStartTime = 0;
     private boolean turretMoved = false; // Track if turret already moved this cycle
 
+    // Diagnostic counters
+    private int sensorDetectedCount = 0;  // How many times sensor triggered
+    private int timeoutUsedCount = 0;     // How many times timeout was used
+
     @Override
     public void init() {
         // Initialize robot system with starting pose
@@ -149,6 +153,8 @@ public class SystemTeleOpExample extends OpMode {
                 // Calculate balls to shoot: position 0=1 ball, 1=2 balls, 2=3 balls
                 ballsToShoot = robot.autoIntake.getCurrentIndex() + 1;
                 ballsShot = 0;
+                sensorDetectedCount = 0;  // Reset diagnostic counters
+                timeoutUsedCount = 0;
                 autoShootState = AutoShootState.PUSH;
                 stateStartTime = System.currentTimeMillis();
                 telemetry.addLine("🎯 AUTO-SHOOT STARTED! Shooting " + ballsToShoot + " balls from position " + robot.autoIntake.getCurrentIndex());
@@ -225,6 +231,26 @@ public class SystemTeleOpExample extends OpMode {
         telemetry.addData("Shooter Motor", shooterMotorOn ? "✓ ON" : "✗ OFF");
         telemetry.addData("Velocity Mode", isHighVelocityMode ? "HIGH (460)" : "LOW (100)");
         telemetry.addData("Current Velocity", "%.0f", robot.motors.getShooterVelocity());
+
+        // Show sensor state with more detail for debugging
+        boolean sensorPressed = robot.shooting.isBallPushRetracted();
+        telemetry.addData("Ball Push Sensor", sensorPressed ? "✓ PRESSED (retracted)" : "✗ NOT PRESSED (extended)");
+        telemetry.addData("Sensor Raw", sensorPressed ? "TRUE" : "FALSE");
+
+        // Diagnostic: Show which path auto-shoot is using
+        if (autoShootState != AutoShootState.IDLE || sensorDetectedCount > 0 || timeoutUsedCount > 0) {
+            telemetry.addData("Sensor Detections", sensorDetectedCount);
+            telemetry.addData("Timeout Fallbacks", timeoutUsedCount);
+
+            if (sensorDetectedCount > 0 && timeoutUsedCount == 0) {
+                telemetry.addData("Status", "✅ SENSOR WORKING!");
+            } else if (timeoutUsedCount > 0 && sensorDetectedCount == 0) {
+                telemetry.addData("Status", "⚠️ USING TIMEOUT (sensor not working)");
+            } else if (sensorDetectedCount > 0 && timeoutUsedCount > 0) {
+                telemetry.addData("Status", "⚠️ MIXED (sensor unreliable)");
+            }
+        }
+
         telemetry.addData("Auto-Shoot", autoShootState == AutoShootState.IDLE ? "Idle" : "🎯 SHOOTING");
         telemetry.addData("Balls Shot", ballsShot + "/" + ballsToShoot);
         telemetry.addData("State", autoShootState.toString());
@@ -246,8 +272,9 @@ public class SystemTeleOpExample extends OpMode {
     }
 
     /**
-     * Hybrid auto-shoot - uses reliable timing for servo movement
-     * Increased timing margins for consistency
+     * Touch sensor-based auto-shoot - MUCH FASTER!
+     * Uses touch sensor to detect when ball push is retracted
+     * No waiting for arbitrary timing - moves as soon as safe!
      */
     private void updateAutoShoot() {
         if (autoShootState == AutoShootState.IDLE) {
@@ -284,9 +311,15 @@ public class SystemTeleOpExample extends OpMode {
                 break;
 
             case WAIT_RETRACT:
-                // Wait for servo to fully retract - CRITICAL for safety, keep longer
-                if (elapsed > 400) { // 400ms - ensures ball push is clear before turret moves
-                    telemetry.addLine("✓ Retracted, safe to move");
+                // Wait for ball push servo to retract - USE TOUCH SENSOR with timeout safety
+                // Sensor is pressed when ball push is fully retracted
+                boolean sensorRetracted = robot.shooting.isBallPushRetracted();
+                boolean timeoutReached = elapsed > 500; // Safety timeout - don't wait forever
+
+                if (sensorRetracted) {
+                    sensorDetectedCount++;  // Track sensor success
+                    telemetry.addLine("✓ Retracted (SENSOR DETECTED), safe to move");
+                    telemetry.addData("Retract time", elapsed + "ms");
 
                     // Check if we have more balls to shoot
                     if (ballsShot < ballsToShoot) {
@@ -299,6 +332,23 @@ public class SystemTeleOpExample extends OpMode {
                         telemetry.addLine("✅ All " + ballsShot + " balls shot! Complete.");
                         autoShootState = AutoShootState.IDLE;
                     }
+                } else if (timeoutReached) {
+                    timeoutUsedCount++;  // Track timeout fallback
+                    // Safety timeout - move anyway after 500ms
+                    telemetry.addLine("⚠️ Timeout (sensor didn't trigger), moving anyway");
+                    telemetry.addData("Retract time", elapsed + "ms (TIMEOUT)");
+
+                    if (ballsShot < ballsToShoot) {
+                        autoShootState = AutoShootState.ADVANCE;
+                        stateStartTime = System.currentTimeMillis();
+                        turretMoved = false;
+                    } else {
+                        telemetry.addLine("✅ All " + ballsShot + " balls shot! Complete.");
+                        autoShootState = AutoShootState.IDLE;
+                    }
+                } else {
+                    // Still waiting for sensor or timeout
+                    telemetry.addData("Waiting for sensor", elapsed + "ms");
                 }
                 break;
 

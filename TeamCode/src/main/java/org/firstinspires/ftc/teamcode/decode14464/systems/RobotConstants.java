@@ -79,6 +79,9 @@ public class RobotConstants {
         public static final double RETRACT_POSITION = 0.49;
 
         public static final long PUSH_DELAY_MS = 200;  // Time to push ball
+
+        // Touch sensor - detects when ball push is fully retracted
+        public static final String TOUCH_SENSOR_NAME = "ballpush_sensor";
     }
 
     // ==================== COLOR SERVO (PWM LIGHT) CONSTANTS ====================

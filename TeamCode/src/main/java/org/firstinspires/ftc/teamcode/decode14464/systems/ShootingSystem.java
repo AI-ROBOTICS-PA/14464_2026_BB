@@ -5,6 +5,7 @@ import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 import com.qualcomm.robotcore.hardware.PIDFCoefficients;
 import com.qualcomm.robotcore.hardware.Servo;
+import com.qualcomm.robotcore.hardware.TouchSensor;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 /**
@@ -16,6 +17,7 @@ public class ShootingSystem {
     private DcMotorEx flywheelMotor;
     private DcMotor intakeMotor;
     private Servo ballPushServo;
+    private TouchSensor ballPushSensor; // Detects when ball push is retracted
     private AutoIntakeSystem intakeSystem;
     private LocalizationSystem localization;
 
@@ -51,6 +53,7 @@ public class ShootingSystem {
         flywheelMotor = hardwareMap.get(DcMotorEx.class, "shooter");
         intakeMotor = hardwareMap.get(DcMotor.class, "intake");
         ballPushServo = hardwareMap.get(Servo.class, "ballpush_2");
+        ballPushSensor = hardwareMap.get(TouchSensor.class, RobotConstants.BallPush.TOUCH_SENSOR_NAME);
 
         this.intakeSystem = intakeSystem;
         this.localization = localization;
@@ -371,6 +374,17 @@ public class ShootingSystem {
             return ballPushServo.getPosition();
         }
         return 0.0;
+    }
+
+    /**
+     * Check if ball push servo is fully retracted using touch sensor
+     * @return true if ball push is retracted (sensor pressed), false otherwise
+     */
+    public boolean isBallPushRetracted() {
+        if (ballPushSensor != null) {
+            return ballPushSensor.isPressed();
+        }
+        return false; // If no sensor, assume not retracted
     }
 }
 
