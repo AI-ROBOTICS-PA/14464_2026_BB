@@ -1,9 +1,6 @@
 package org.firstinspires.ftc.teamcode.decode14464.systems;
 
 import com.qualcomm.robotcore.hardware.HardwareMap;
-import org.firstinspires.ftc.teamcode.decode14464.RobotSensors;
-import org.firstinspires.ftc.teamcode.decode14464.RobotMotors;
-import org.firstinspires.ftc.teamcode.decode14464.RobotServos;
 
 /**
  * Feature 4: Auto-Intake System
@@ -192,7 +189,21 @@ public class AutoIntakeSystem {
         return servos != null && servos.turret_1 != null ? servos.turret_1.getPosition() : 0;
     }
 
-    // ...existing code...
+    /**
+     * Check if ball is detected by color sensor
+     */
+    public boolean isBallDetected() {
+        String color = getColorName();
+        return !color.equalsIgnoreCase(RobotConstants.ColorSensor.NO_BALL_COLOR_1) &&
+               !color.equalsIgnoreCase(RobotConstants.ColorSensor.NO_BALL_COLOR_2);
+    }
+
+    /**
+     * Get detected color name
+     */
+    public String getDetectedColor() {
+        return getColorName();
+    }
 
     /**
      * Reset to first launch position (for auto-shoot)

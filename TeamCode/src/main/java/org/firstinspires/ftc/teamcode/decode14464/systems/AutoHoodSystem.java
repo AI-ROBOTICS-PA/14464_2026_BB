@@ -1,7 +1,6 @@
 package org.firstinspires.ftc.teamcode.decode14464.systems;
 
 import com.qualcomm.robotcore.hardware.HardwareMap;
-import org.firstinspires.ftc.teamcode.decode14464.RobotServos;
 
 /**
  * Feature 3: Auto-Hood System

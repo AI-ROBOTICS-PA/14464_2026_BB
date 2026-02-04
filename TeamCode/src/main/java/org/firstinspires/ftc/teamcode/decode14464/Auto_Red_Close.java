@@ -4,13 +4,14 @@ import com.pedropathing.follower.Follower;
 import com.pedropathing.geometry.BezierLine;
 import com.pedropathing.geometry.Pose;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
-import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.pedropathing.paths.Path;
 import com.pedropathing.paths.PathChain;
-import com.qualcomm.robotcore.util.ElapsedTime;
 import com.pedropathing.util.Timer;
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
+import org.firstinspires.ftc.teamcode.decode14464.systems.RobotMotors;
+import org.firstinspires.ftc.teamcode.decode14464.systems.RobotServos;
+import org.firstinspires.ftc.teamcode.decode14464.systems.RobotSensors;
 
 
 @Autonomous(name = "Auto Red Close", group = "DECODE Auto")

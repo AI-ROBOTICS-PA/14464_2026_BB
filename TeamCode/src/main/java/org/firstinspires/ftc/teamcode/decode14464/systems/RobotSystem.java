@@ -2,9 +2,6 @@ package org.firstinspires.ftc.teamcode.decode14464.systems;
 
 import com.pedropathing.geometry.Pose;
 import com.qualcomm.robotcore.hardware.HardwareMap;
-import org.firstinspires.ftc.teamcode.decode14464.RobotMotors;
-import org.firstinspires.ftc.teamcode.decode14464.RobotSensors;
-import org.firstinspires.ftc.teamcode.decode14464.RobotServos;
 
 /**
  * Master Robot System
@@ -17,13 +14,15 @@ public class RobotSystem {
     public AutoHoodSystem autoHood;
     public AutoIntakeSystem autoIntake;
     public ShootingSystem shooting;
+    public AutoShootSystem autoShoot; // Reusable auto-shoot system
     public LEDSystem led;
     public RobotMotors motors; // Direct motor control
     public RobotSensors sensors; // Centralized sensor management
     public RobotServos servos; // Centralized servo management
 
     /**
-     * Initialize all systems
+     * Initialize all systems FOR AUTO PROGRAMS
+     * Sets a specific starting position
      * @param hardwareMap The hardware map from OpMode
      * @param startPose Starting position for localization
      */
@@ -64,6 +63,58 @@ public class RobotSystem {
         shooting = new ShootingSystem();
         shooting.init(hardwareMap, autoIntake, localization, motors, servos);
 
+        // 7. Auto-Shoot (depends on motors, servos, sensors, autoIntake)
+        autoShoot = new AutoShootSystem();
+        autoShoot.init(hardwareMap, motors, servos, sensors, autoIntake);
+
+        // Sync LED with intake mode
+        led.setLaunchModeColor(); // Start in launch mode
+    }
+
+    /**
+     * Initialize for TeleOp - PRESERVES position from Auto
+     * Use this in TeleOp programs to maintain position continuity from Auto period
+     * @param hardwareMap The hardware map from OpMode
+     */
+    public void initTeleOp(HardwareMap hardwareMap) {
+        // Initialize hardware
+        motors = new RobotMotors();
+        motors.init(hardwareMap);
+
+        sensors = new RobotSensors();
+        sensors.init(hardwareMap);
+
+        servos = new RobotServos();
+        servos.init(hardwareMap);
+
+        // Localization - will preserve existing position from Auto
+        localization = new LocalizationSystem();
+        localization.initTeleOp(hardwareMap); // Use TeleOp init to preserve position
+
+        // 2. Auto-Intake (depends on sensors, motors, servos)
+        autoIntake = new AutoIntakeSystem();
+        autoIntake.init(hardwareMap, sensors, motors, servos);
+
+        // 3. LED (depends on servos)
+        led = new LEDSystem();
+        led.init(hardwareMap, servos);
+
+        // 4. Auto-Turret (depends on localization, motors)
+        autoTurret = new AutoTurretSystem();
+        autoTurret.init(hardwareMap, localization, motors);
+
+        // 5. Auto-Hood (depends on localization, servos)
+        autoHood = new AutoHoodSystem();
+        autoHood.init(hardwareMap, localization, servos);
+
+        // 6. Shooting (depends on localization, autoIntake, motors, servos)
+        shooting = new ShootingSystem();
+        shooting.init(hardwareMap, autoIntake, localization, motors, servos);
+
+        // 7. Auto-Shoot (depends on motors, servos, sensors, autoIntake)
+        autoShoot = new AutoShootSystem();
+        autoShoot.init(hardwareMap, motors, servos, sensors, autoIntake);
+
         // Sync LED with intake mode
         led.setLaunchModeColor(); // Start in launch mode
     }
@@ -78,9 +129,7 @@ public class RobotSystem {
         autoHood.update();               // And adjust hood
         autoIntake.update();             // Handle auto-advancement
         shooting.update();               // Process shooting sequence
-
-        // Sync LED with intake mode
-        led.syncWithIntakeMode(autoIntake.isIntakeMode());
+        autoShoot.update();              // Update auto-shoot state machine
     }
 
     /**
@@ -89,10 +138,8 @@ public class RobotSystem {
     public void stopAll() {
         if (autoTurret != null) autoTurret.stop();
         if (shooting != null) shooting.stopShooter();
-        if (shooting != null) shooting.stopAutoShoot();
-        if (autoIntake != null) autoIntake.stopAll(); // Stop intake motor through AutoIntakeSystem
-        if (motors != null) motors.stopShooter();
-        if (led != null) led.turnOff();
+        if (autoShoot != null) autoShoot.stop();
+        if (autoIntake != null) autoIntake.stopAll();
     }
 
     /**
@@ -137,14 +184,12 @@ public class RobotSystem {
     }
 
     /**
-     * Quick access: Shoot from anywhere (enable auto, start shooter, wait, shoot)
+     * Quick access: Shoot from anywhere (enable auto, start shooter)
      */
     public void shootFromAnywhere() {
         enableFullAuto();
-
         if (shooting != null) {
             shooting.startShooterAuto(); // Start with distance-based velocity
-            // Trigger shooting when ready (check in your loop)
         }
     }
 }

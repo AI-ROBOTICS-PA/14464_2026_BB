@@ -5,11 +5,13 @@ import com.bylazar.telemetry.PanelsTelemetry;
 import com.bylazar.telemetry.TelemetryManager;
 import com.pedropathing.follower.Follower;
 import com.pedropathing.geometry.Pose;
-import com.pedropathing.util.NanoTimer;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import org.firstinspires.ftc.robotcore.external.navigation.Pose3D;
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
+import org.firstinspires.ftc.teamcode.decode14464.systems.RobotMotors;
+import org.firstinspires.ftc.teamcode.decode14464.systems.RobotServos;
+import org.firstinspires.ftc.teamcode.decode14464.systems.RobotSensors;
 
 @Configurable
 @TeleOp(name = "Auto Shooting", group = "Competition")
@@ -231,17 +233,17 @@ public class AutoShooting extends OpMode {
         if (runAutoAim) {
             // Set hood to calculated angle
             double hoodServoPosition = hoodAngleToServoPosition(calculatedHoodAngle);
-            robotServos.turret_1.setPosition(hoodServoPosition);
+            robotServos.hood_5.setPosition(hoodServoPosition);
         } else {
             // Manual hood control with D-pad
             if (gamepad1.dpad_up) {
-                robotServos.turret_1.setPosition(
-                    Math.min(HOOD_SERVO_MAX, robotServos.turret_1.getPosition() + 0.01)
+                robotServos.hood_5.setPosition(
+                    Math.min(HOOD_SERVO_MAX, robotServos.hood_5.getPosition() + 0.01)
                 );
             }
             if (gamepad1.dpad_down) {
-                robotServos.turret_1.setPosition(
-                    Math.max(HOOD_SERVO_MIN, robotServos.turret_1.getPosition() - 0.01)
+                robotServos.hood_5.setPosition(
+                    Math.max(HOOD_SERVO_MIN, robotServos.hood_5.getPosition() - 0.01)
                 );
             }
         }

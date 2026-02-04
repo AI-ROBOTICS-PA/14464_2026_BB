@@ -4,8 +4,6 @@ import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 import com.qualcomm.robotcore.hardware.PIDFCoefficients;
 import com.qualcomm.robotcore.util.ElapsedTime;
-import org.firstinspires.ftc.teamcode.decode14464.RobotMotors;
-import org.firstinspires.ftc.teamcode.decode14464.RobotServos;
 
 /**
  * Feature 5 & 7: Shooting System
@@ -55,14 +53,14 @@ public class ShootingSystem {
 
         // Motors and servos already configured in RobotMotors/RobotServos
         // Just set shooter-specific PIDF if needed
-        if (motors != null && motors.shooter != null) {
+        if (motors != null && motors.flywheelMotor != null) {
             PIDFCoefficients pidfCoefficients = new PIDFCoefficients(
                 RobotConstants.Shooter.KP,
                 RobotConstants.Shooter.KI,
                 RobotConstants.Shooter.KD,
                 RobotConstants.Shooter.KF
             );
-            motors.shooter.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER, pidfCoefficients);
+            motors.flywheelMotor.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER, pidfCoefficients);
         }
 
         // Initialize ball push servo
@@ -202,8 +200,8 @@ public class ShootingSystem {
      */
     public void startShooter(double velocity) {
         this.targetVelocity = velocity; // Store target for accuracy check
-        if (motors != null && motors.shooter != null) {
-            motors.shooter.setVelocity(velocity);
+        if (motors != null && motors.flywheelMotor != null) {
+            motors.flywheelMotor.setVelocity(velocity);
             isShooterActive = true;
         }
     }
@@ -221,8 +219,8 @@ public class ShootingSystem {
      * Stop shooter
      */
     public void stopShooter() {
-        if (motors != null && motors.shooter != null) {
-            motors.shooter.setVelocity(0);
+        if (motors != null && motors.flywheelMotor != null) {
+            motors.flywheelMotor.setVelocity(0);
             isShooterActive = false;
             targetVelocity = 0; // Reset target
         }
@@ -289,10 +287,10 @@ public class ShootingSystem {
      * Check if shooter is at target velocity
      */
     public boolean isShooterAtTargetVelocity() {
-        if (motors == null || motors.shooter == null || !isShooterActive || targetVelocity == 0) {
+        if (motors == null || motors.flywheelMotor == null || !isShooterActive || targetVelocity == 0) {
             return false;
         }
-        double currentVel = motors.shooter.getVelocity();
+        double currentVel = motors.flywheelMotor.getVelocity();
         return Math.abs(currentVel - targetVelocity) <= RobotConstants.Shooter.VELOCITY_TOLERANCE;
     }
 
@@ -300,7 +298,7 @@ public class ShootingSystem {
      * Get current shooter velocity
      */
     public double getCurrentVelocity() {
-        return motors != null && motors.shooter != null ? motors.shooter.getVelocity() : 0;
+        return motors != null && motors.flywheelMotor != null ? motors.flywheelMotor.getVelocity() : 0;
     }
 
     /**

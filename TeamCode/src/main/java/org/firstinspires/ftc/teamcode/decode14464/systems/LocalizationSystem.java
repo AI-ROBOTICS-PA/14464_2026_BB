@@ -13,11 +13,25 @@ public class LocalizationSystem {
     private Follower follower;
 
     /**
-     * Initialize the localization system
+     * Initialize the localization system for Auto programs
+     * Sets a specific starting position
      */
     public void init(HardwareMap hardwareMap, Pose startPose) {
         follower = Constants.createFollower(hardwareMap);
         follower.setStartingPose(startPose);
+    }
+
+    /**
+     * Initialize for TeleOp - preserves position from Auto
+     * The Pedro Pathing follower will continue from where Auto left off
+     * This maintains position continuity throughout the entire 2min 30sec match
+     */
+    public void initTeleOp(HardwareMap hardwareMap) {
+        // Create follower WITHOUT setting starting pose
+        // This preserves the position from the Auto period
+        follower = Constants.createFollower(hardwareMap);
+        // Note: Pedro Pathing automatically maintains position continuity
+        // No need to reset pose - it continues from last known position
     }
 
     /**
