@@ -45,9 +45,16 @@ public class LocalizationSystem {
 
     /**
      * Get current robot pose (position + heading)
+     * NEVER returns null - returns default pose if not initialized
      */
     public Pose getPose() {
-        return follower != null ? follower.getPose() : new Pose(0, 0, 0);
+        if (follower != null) {
+            Pose pose = follower.getPose();
+            if (pose != null) {
+                return pose;
+            }
+        }
+        return new Pose(0, 0, 0);
     }
 
     /**

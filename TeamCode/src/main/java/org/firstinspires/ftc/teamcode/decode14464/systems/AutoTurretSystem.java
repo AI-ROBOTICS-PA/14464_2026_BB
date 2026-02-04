@@ -19,9 +19,12 @@ public class AutoTurretSystem {
     private double integral = 0;
 
     // Encoder-based rotation limits (prevents runaway rotation)
-    private static final double MAX_ENCODER_POSITION = 750;  // ~150 degrees if 5 ticks/degree
-    private static final double MIN_ENCODER_POSITION = -750; // ~-150 degrees
-    private static final double SOFT_LIMIT_ZONE = 50;        // Slow down within 50 ticks of limit
+    // CALIBRATED: 3.01 ticks per degree (measured with TurretCalibration on Feb 4, 2026)
+    // 271 ticks for 90 degrees → 3.01 ticks/degree
+    // Max rotation: ±150 degrees → ±451 ticks
+    private static final double MAX_ENCODER_POSITION = 451;   // ~150 degrees (3.01 ticks/degree)
+    private static final double MIN_ENCODER_POSITION = -451;  // ~-150 degrees
+    private static final double SOFT_LIMIT_ZONE = 50;         // Slow down within 50 ticks of limit
 
     /**
      * Initialize turret system with centralized motors
