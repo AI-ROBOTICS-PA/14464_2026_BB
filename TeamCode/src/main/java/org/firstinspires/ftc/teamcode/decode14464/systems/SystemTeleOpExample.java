@@ -233,7 +233,7 @@ public class SystemTeleOpExample extends OpMode {
         telemetry.addData("Current Velocity", "%.0f", robot.motors.getShooterVelocity());
 
         // Show sensor state with more detail for debugging
-        boolean sensorPressed = robot.shooting.isBallPushRetracted();
+        boolean sensorPressed = robot.sensors.isBallPushRetracted();
         telemetry.addData("Ball Push Sensor", sensorPressed ? "✓ PRESSED (retracted)" : "✗ NOT PRESSED (extended)");
         telemetry.addData("Sensor Raw", sensorPressed ? "TRUE" : "FALSE");
 
@@ -313,7 +313,7 @@ public class SystemTeleOpExample extends OpMode {
             case WAIT_RETRACT:
                 // Wait for ball push servo to retract - USE TOUCH SENSOR with timeout safety
                 // Sensor is pressed when ball push is fully retracted
-                boolean sensorRetracted = robot.shooting.isBallPushRetracted();
+                boolean sensorRetracted = robot.sensors.isBallPushRetracted();
                 boolean timeoutReached = elapsed > 500; // Safety timeout - don't wait forever
 
                 if (sensorRetracted) {

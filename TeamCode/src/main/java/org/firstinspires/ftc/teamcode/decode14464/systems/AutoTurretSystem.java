@@ -1,27 +1,25 @@
 package org.firstinspires.ftc.teamcode.decode14464.systems;
 
-import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.HardwareMap;
+import org.firstinspires.ftc.teamcode.decode14464.RobotMotors;
 
 /**
  * Feature 2: Auto-Turret System
  * Automatically points turret motor toward the goal using localization
+ * Uses centralized RobotMotors
  */
 public class AutoTurretSystem {
-    private DcMotorEx turretMotor;
+    private RobotMotors motors;
     private LocalizationSystem localization;
     private boolean enabled = false;
 
     private double previousError = 0;
 
     /**
-     * Initialize turret system
+     * Initialize turret system with centralized motors
      */
-    public void init(HardwareMap hardwareMap, LocalizationSystem localizationSystem) {
-        turretMotor = hardwareMap.get(DcMotorEx.class, "turret");
-        turretMotor.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
-        turretMotor.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
-
+    public void init(HardwareMap hardwareMap, LocalizationSystem localizationSystem, RobotMotors motors) {
+        this.motors = motors;
         this.localization = localizationSystem;
     }
 
@@ -38,8 +36,8 @@ public class AutoTurretSystem {
      */
     public void disable() {
         enabled = false;
-        if (turretMotor != null) {
-            turretMotor.setPower(0);
+        if (motors != null && motors.turret != null) {
+            motors.turret.setPower(0);
         }
         previousError = 0;
     }
@@ -66,7 +64,7 @@ public class AutoTurretSystem {
      * Update turret tracking - call this every loop
      */
     public void update() {
-        if (!enabled || turretMotor == null || localization == null) {
+        if (!enabled || motors == null || localization == null) {
             return;
         }
 
@@ -91,7 +89,7 @@ public class AutoTurretSystem {
 
         // Deadband - stop if close enough
         if (Math.abs(error) < RobotConstants.Turret.DEADBAND_DEGREES) {
-            turretMotor.setPower(0);
+            motors.turret.setPower(0);
             previousError = 0;
             return;
         }
@@ -107,7 +105,7 @@ public class AutoTurretSystem {
                         Math.min(RobotConstants.Turret.MAX_POWER, power));
 
         // Apply power
-        turretMotor.setPower(power);
+        motors.turret.setPower(power);
 
         // Save error for next iteration
         previousError = error;
@@ -118,8 +116,8 @@ public class AutoTurretSystem {
      */
     public void setManualPower(double power) {
         enabled = false;
-        if (turretMotor != null) {
-            turretMotor.setPower(power);
+        if (motors != null) {
+            motors.turret.setPower(power);
         }
     }
 
@@ -164,11 +162,10 @@ public class AutoTurretSystem {
      * Stop turret motor
      */
     public void stop() {
-        if (turretMotor != null) {
-            turretMotor.setPower(0);
+        if (motors != null) {
+            motors.turret.setPower(0);
         }
         enabled = false;
         previousError = 0;
     }
 }
-

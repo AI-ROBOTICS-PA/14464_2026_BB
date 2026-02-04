@@ -1,21 +1,22 @@
 package org.firstinspires.ftc.teamcode.decode14464.systems;
 
 import com.qualcomm.robotcore.hardware.HardwareMap;
-import com.qualcomm.robotcore.hardware.Servo;
+import org.firstinspires.ftc.teamcode.decode14464.RobotServos;
 
 /**
  * Feature 6: LED/PWM Light System
  * Controls color servo for visual feedback based on robot mode
+ * Uses centralized RobotServos
  */
 public class LEDSystem {
-    private Servo colorServo;
+    private RobotServos servos;
     private boolean isIntakeMode = false;
 
     /**
-     * Initialize LED system
+     * Initialize LED system with centralized servos
      */
-    public void init(HardwareMap hardwareMap) {
-        colorServo = hardwareMap.get(Servo.class, "colorservo");
+    public void init(HardwareMap hardwareMap, RobotServos servos) {
+        this.servos = servos;
 
         // Set initial color (launch mode)
         setLaunchModeColor();
@@ -25,8 +26,8 @@ public class LEDSystem {
      * Set color for intake mode
      */
     public void setIntakeModeColor() {
-        if (colorServo != null) {
-            colorServo.setPosition(RobotConstants.ColorServo.INTAKE_MODE_COLOR);
+        if (servos != null && servos.colorservo != null) {
+            servos.colorservo.setPosition(RobotConstants.ColorServo.INTAKE_MODE_COLOR);
             isIntakeMode = true;
         }
     }
@@ -35,47 +36,29 @@ public class LEDSystem {
      * Set color for launch mode
      */
     public void setLaunchModeColor() {
-        if (colorServo != null) {
-            colorServo.setPosition(RobotConstants.ColorServo.LAUNCH_MODE_COLOR);
+        if (servos != null && servos.colorservo != null) {
+            servos.colorservo.setPosition(RobotConstants.ColorServo.LAUNCH_MODE_COLOR);
             isIntakeMode = false;
         }
     }
 
     /**
-     * Set neutral color
+     * Toggle between intake and launch mode colors
      */
-    public void setNeutralColor() {
-        if (colorServo != null) {
-            colorServo.setPosition(RobotConstants.ColorServo.NEUTRAL_COLOR);
-        }
-    }
-
-    /**
-     * Turn off LED
-     */
-    public void turnOff() {
-        if (colorServo != null) {
-            colorServo.setPosition(RobotConstants.ColorServo.OFF);
-        }
-    }
-
-    /**
-     * Set custom color (0.0 to 1.0)
-     */
-    public void setCustomColor(double position) {
-        if (colorServo != null) {
-            colorServo.setPosition(position);
-        }
-    }
-
-    /**
-     * Sync with intake system mode
-     */
-    public void syncWithIntakeMode(boolean intakeMode) {
-        if (intakeMode) {
-            setIntakeModeColor();
-        } else {
+    public void toggleMode() {
+        if (isIntakeMode) {
             setLaunchModeColor();
+        } else {
+            setIntakeModeColor();
+        }
+    }
+
+    /**
+     * Set custom color position
+     */
+    public void setColor(double position) {
+        if (servos != null && servos.colorservo != null) {
+            servos.colorservo.setPosition(position);
         }
     }
 
@@ -86,4 +69,3 @@ public class LEDSystem {
         return isIntakeMode;
     }
 }
-

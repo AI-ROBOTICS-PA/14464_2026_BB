@@ -1,22 +1,23 @@
 package org.firstinspires.ftc.teamcode.decode14464.systems;
 
 import com.qualcomm.robotcore.hardware.HardwareMap;
-import com.qualcomm.robotcore.hardware.Servo;
+import org.firstinspires.ftc.teamcode.decode14464.RobotServos;
 
 /**
  * Feature 3: Auto-Hood System
  * Automatically adjusts hood angle based on distance to goal
+ * Uses centralized RobotServos
  */
 public class AutoHoodSystem {
-    private Servo hoodServo;
+    private RobotServos servos;
     private LocalizationSystem localization;
     private boolean autoAdjustEnabled = false;
 
     /**
-     * Initialize hood system
+     * Initialize hood system with centralized servos
      */
-    public void init(HardwareMap hardwareMap, LocalizationSystem localizationSystem) {
-        hoodServo = hardwareMap.get(Servo.class, "hood_5");
+    public void init(HardwareMap hardwareMap, LocalizationSystem localizationSystem, RobotServos servos) {
+        this.servos = servos;
         this.localization = localizationSystem;
 
         // Set to home position
@@ -55,7 +56,7 @@ public class AutoHoodSystem {
      * Update hood position - call this every loop
      */
     public void update() {
-        if (!autoAdjustEnabled || hoodServo == null || localization == null) {
+        if (!autoAdjustEnabled || servos == null || servos.hood_5 == null || localization == null) {
             return;
         }
 
@@ -124,11 +125,11 @@ public class AutoHoodSystem {
      * Set hood position manually (0.0 to 1.0)
      */
     public void setPosition(double position) {
-        if (hoodServo != null) {
+        if (servos != null && servos.hood_5 != null) {
             // Clamp to safe range
             position = Math.max(RobotConstants.Hood.MIN_POSITION,
                                Math.min(RobotConstants.Hood.MAX_POSITION, position));
-            hoodServo.setPosition(position);
+            servos.hood_5.setPosition(position);
         }
     }
 
@@ -136,8 +137,8 @@ public class AutoHoodSystem {
      * Increment hood position
      */
     public void increment(double amount) {
-        if (hoodServo != null) {
-            double newPosition = hoodServo.getPosition() + amount;
+        if (servos != null && servos.hood_5 != null) {
+            double newPosition = servos.hood_5.getPosition() + amount;
             setPosition(newPosition);
             autoAdjustEnabled = false; // Manual control
         }
@@ -154,7 +155,7 @@ public class AutoHoodSystem {
      * Get current hood position
      */
     public double getPosition() {
-        return hoodServo != null ? hoodServo.getPosition() : 0;
+        return (servos != null && servos.hood_5 != null) ? servos.hood_5.getPosition() : 0;
     }
 
     /**
@@ -168,4 +169,3 @@ public class AutoHoodSystem {
         );
     }
 }
-

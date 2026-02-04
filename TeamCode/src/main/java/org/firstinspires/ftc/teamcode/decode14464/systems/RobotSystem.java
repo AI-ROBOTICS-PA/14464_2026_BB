@@ -3,6 +3,8 @@ package org.firstinspires.ftc.teamcode.decode14464.systems;
 import com.pedropathing.geometry.Pose;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 import org.firstinspires.ftc.teamcode.decode14464.RobotMotors;
+import org.firstinspires.ftc.teamcode.decode14464.RobotSensors;
+import org.firstinspires.ftc.teamcode.decode14464.RobotServos;
 
 /**
  * Master Robot System
@@ -16,7 +18,9 @@ public class RobotSystem {
     public AutoIntakeSystem autoIntake;
     public ShootingSystem shooting;
     public LEDSystem led;
-    public RobotMotors motors; // Added for direct motor control
+    public RobotMotors motors; // Direct motor control
+    public RobotSensors sensors; // Centralized sensor management
+    public RobotServos servos; // Centralized servo management
 
     /**
      * Initialize all systems
@@ -26,33 +30,39 @@ public class RobotSystem {
     public void init(HardwareMap hardwareMap, Pose startPose) {
         // Initialize systems in dependency order
 
-        // 0. Robot Motors (for direct control)
+        // 0. Robot Motors, Sensors, and Servos (centralized hardware)
         motors = new RobotMotors();
         motors.init(hardwareMap);
+
+        sensors = new RobotSensors();
+        sensors.init(hardwareMap);
+
+        servos = new RobotServos();
+        servos.init(hardwareMap);
 
         // 1. Localization (no dependencies)
         localization = new LocalizationSystem();
         localization.init(hardwareMap, startPose);
 
-        // 2. Auto-Intake (no dependencies)
+        // 2. Auto-Intake (depends on sensors, motors, servos)
         autoIntake = new AutoIntakeSystem();
-        autoIntake.init(hardwareMap);
+        autoIntake.init(hardwareMap, sensors, motors, servos);
 
-        // 3. LED (no dependencies)
+        // 3. LED (depends on servos)
         led = new LEDSystem();
-        led.init(hardwareMap);
+        led.init(hardwareMap, servos);
 
-        // 4. Auto-Turret (depends on localization)
+        // 4. Auto-Turret (depends on localization, motors)
         autoTurret = new AutoTurretSystem();
-        autoTurret.init(hardwareMap, localization);
+        autoTurret.init(hardwareMap, localization, motors);
 
-        // 5. Auto-Hood (depends on localization)
+        // 5. Auto-Hood (depends on localization, servos)
         autoHood = new AutoHoodSystem();
-        autoHood.init(hardwareMap, localization);
+        autoHood.init(hardwareMap, localization, servos);
 
-        // 6. Shooting (depends on localization and autoIntake)
+        // 6. Shooting (depends on localization, autoIntake, motors, servos)
         shooting = new ShootingSystem();
-        shooting.init(hardwareMap, autoIntake, localization);
+        shooting.init(hardwareMap, autoIntake, localization, motors, servos);
 
         // Sync LED with intake mode
         led.setLaunchModeColor(); // Start in launch mode

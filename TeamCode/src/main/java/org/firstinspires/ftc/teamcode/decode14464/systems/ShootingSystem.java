@@ -1,29 +1,26 @@
 package org.firstinspires.ftc.teamcode.decode14464.systems;
 
 import com.qualcomm.robotcore.hardware.DcMotor;
-import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 import com.qualcomm.robotcore.hardware.PIDFCoefficients;
-import com.qualcomm.robotcore.hardware.Servo;
-import com.qualcomm.robotcore.hardware.TouchSensor;
 import com.qualcomm.robotcore.util.ElapsedTime;
+import org.firstinspires.ftc.teamcode.decode14464.RobotMotors;
+import org.firstinspires.ftc.teamcode.decode14464.RobotServos;
 
 /**
  * Feature 5 & 7: Shooting System
  * Manages shooter motor velocity and automatic shooting sequence
- * Also handles distance-based velocity adjustment
+ * Uses centralized RobotMotors and RobotServos
  */
 public class ShootingSystem {
-    private DcMotorEx flywheelMotor;
-    private DcMotor intakeMotor;
-    private Servo ballPushServo;
-    private TouchSensor ballPushSensor; // Detects when ball push is retracted
+    private RobotMotors motors;
+    private RobotServos servos;
     private AutoIntakeSystem intakeSystem;
     private LocalizationSystem localization;
 
     private boolean isShooterActive = false;
     private boolean isAutoShootingInProgress = false;
-    private double targetVelocity = 0; // Track target velocity for accurate checks
+    private double targetVelocity = 0;
     private ElapsedTime shootTimer = new ElapsedTime();
 
     private enum ShootingState {
@@ -47,34 +44,31 @@ public class ShootingSystem {
     private ShootingState currentState = ShootingState.IDLE;
 
     /**
-     * Initialize shooting system
+     * Initialize shooting system with centralized hardware
      */
-    public void init(HardwareMap hardwareMap, AutoIntakeSystem intakeSystem, LocalizationSystem localization) {
-        flywheelMotor = hardwareMap.get(DcMotorEx.class, "shooter");
-        intakeMotor = hardwareMap.get(DcMotor.class, "intake");
-        ballPushServo = hardwareMap.get(Servo.class, "ballpush_2");
-        ballPushSensor = hardwareMap.get(TouchSensor.class, RobotConstants.BallPush.TOUCH_SENSOR_NAME);
-
+    public void init(HardwareMap hardwareMap, AutoIntakeSystem intakeSystem,
+                     LocalizationSystem localization, RobotMotors motors, RobotServos servos) {
+        this.motors = motors;
+        this.servos = servos;
         this.intakeSystem = intakeSystem;
         this.localization = localization;
 
-        // Configure flywheel motor
-        flywheelMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        flywheelMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-        flywheelMotor.setDirection(DcMotor.Direction.FORWARD);
-        flywheelMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-
-        // Set PIDF coefficients
-        PIDFCoefficients pidfCoefficients = new PIDFCoefficients(
-            RobotConstants.Shooter.KP,
-            RobotConstants.Shooter.KI,
-            RobotConstants.Shooter.KD,
-            RobotConstants.Shooter.KF
-        );
-        flywheelMotor.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER, pidfCoefficients);
+        // Motors and servos already configured in RobotMotors/RobotServos
+        // Just set shooter-specific PIDF if needed
+        if (motors != null && motors.shooter != null) {
+            PIDFCoefficients pidfCoefficients = new PIDFCoefficients(
+                RobotConstants.Shooter.KP,
+                RobotConstants.Shooter.KI,
+                RobotConstants.Shooter.KD,
+                RobotConstants.Shooter.KF
+            );
+            motors.shooter.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER, pidfCoefficients);
+        }
 
         // Initialize ball push servo
-        ballPushServo.setPosition(RobotConstants.BallPush.INITIAL_POSITION);
+        if (servos != null && servos.ballpush_4 != null) {
+            servos.ballpush_4.setPosition(RobotConstants.BallPush.INITIAL_POSITION);
+        }
     }
 
     /**
@@ -103,7 +97,7 @@ public class ShootingSystem {
 
             // ========== BALL 1 SEQUENCE ==========
             case PUSH_BALL_1:
-                ballPushServo.setPosition(RobotConstants.BallPush.PUSH_POSITION);
+                servos.ballpush_4.setPosition(RobotConstants.BallPush.PUSH_POSITION);
                 if (elapsed > RobotConstants.Timing.BALL_PUSH_DURATION_MS) {
                     currentState = ShootingState.RETRACT_1;
                     shootTimer.reset();
@@ -112,7 +106,7 @@ public class ShootingSystem {
 
             case RETRACT_1:
                 // Start retracting ball push servo
-                ballPushServo.setPosition(RobotConstants.BallPush.RETRACT_POSITION);
+                servos.ballpush_4.setPosition(RobotConstants.BallPush.RETRACT_POSITION);
                 currentState = ShootingState.WAIT_RETRACT_1;
                 shootTimer.reset();
                 break;
@@ -142,7 +136,7 @@ public class ShootingSystem {
 
             // ========== BALL 2 SEQUENCE ==========
             case PUSH_BALL_2:
-                ballPushServo.setPosition(RobotConstants.BallPush.PUSH_POSITION);
+                servos.ballpush_4.setPosition(RobotConstants.BallPush.PUSH_POSITION);
                 if (elapsed > RobotConstants.Timing.BALL_PUSH_DURATION_MS) {
                     currentState = ShootingState.RETRACT_2;
                     shootTimer.reset();
@@ -151,7 +145,7 @@ public class ShootingSystem {
 
             case RETRACT_2:
                 // Start retracting ball push servo
-                ballPushServo.setPosition(RobotConstants.BallPush.RETRACT_POSITION);
+                servos.ballpush_4.setPosition(RobotConstants.BallPush.RETRACT_POSITION);
                 currentState = ShootingState.WAIT_RETRACT_2;
                 shootTimer.reset();
                 break;
@@ -181,7 +175,7 @@ public class ShootingSystem {
 
             // ========== BALL 3 SEQUENCE ==========
             case PUSH_BALL_3:
-                ballPushServo.setPosition(RobotConstants.BallPush.PUSH_POSITION);
+                servos.ballpush_4.setPosition(RobotConstants.BallPush.PUSH_POSITION);
                 if (elapsed > RobotConstants.Timing.BALL_PUSH_DURATION_MS) {
                     currentState = ShootingState.RETRACT_3;
                     shootTimer.reset();
@@ -190,7 +184,7 @@ public class ShootingSystem {
 
             case RETRACT_3:
                 // Final retract - no more balls to shoot
-                ballPushServo.setPosition(RobotConstants.BallPush.RETRACT_POSITION);
+                servos.ballpush_4.setPosition(RobotConstants.BallPush.RETRACT_POSITION);
                 if (elapsed > RobotConstants.Timing.BALL_PUSH_DURATION_MS) {
                     currentState = ShootingState.COMPLETE;
                     isAutoShootingInProgress = false;
@@ -208,8 +202,8 @@ public class ShootingSystem {
      */
     public void startShooter(double velocity) {
         this.targetVelocity = velocity; // Store target for accuracy check
-        if (flywheelMotor != null) {
-            flywheelMotor.setVelocity(velocity);
+        if (motors != null && motors.shooter != null) {
+            motors.shooter.setVelocity(velocity);
             isShooterActive = true;
         }
     }
@@ -227,8 +221,8 @@ public class ShootingSystem {
      * Stop shooter
      */
     public void stopShooter() {
-        if (flywheelMotor != null) {
-            flywheelMotor.setVelocity(0);
+        if (motors != null && motors.shooter != null) {
+            motors.shooter.setVelocity(0);
             isShooterActive = false;
             targetVelocity = 0; // Reset target
         }
@@ -265,7 +259,7 @@ public class ShootingSystem {
     public void stopAutoShoot() {
         isAutoShootingInProgress = false;
         currentState = ShootingState.IDLE;
-        ballPushServo.setPosition(RobotConstants.BallPush.RETRACT_POSITION);
+        servos.ballpush_4.setPosition(RobotConstants.BallPush.RETRACT_POSITION);
     }
 
     /**
@@ -295,10 +289,10 @@ public class ShootingSystem {
      * Check if shooter is at target velocity
      */
     public boolean isShooterAtTargetVelocity() {
-        if (flywheelMotor == null || !isShooterActive || targetVelocity == 0) {
+        if (motors == null || motors.shooter == null || !isShooterActive || targetVelocity == 0) {
             return false;
         }
-        double currentVel = flywheelMotor.getVelocity();
+        double currentVel = motors.shooter.getVelocity();
         return Math.abs(currentVel - targetVelocity) <= RobotConstants.Shooter.VELOCITY_TOLERANCE;
     }
 
@@ -306,7 +300,7 @@ public class ShootingSystem {
      * Get current shooter velocity
      */
     public double getCurrentVelocity() {
-        return flywheelMotor != null ? flywheelMotor.getVelocity() : 0;
+        return motors != null && motors.shooter != null ? motors.shooter.getVelocity() : 0;
     }
 
     /**
@@ -345,14 +339,14 @@ public class ShootingSystem {
      * Manual ball push (for testing)
      */
     public void pushBall() {
-        ballPushServo.setPosition(RobotConstants.BallPush.PUSH_POSITION);
+        servos.ballpush_4.setPosition(RobotConstants.BallPush.PUSH_POSITION);
     }
 
     /**
      * Manual ball retract (for testing)
      */
     public void retractBall() {
-        ballPushServo.setPosition(RobotConstants.BallPush.RETRACT_POSITION);
+        servos.ballpush_4.setPosition(RobotConstants.BallPush.RETRACT_POSITION);
     }
 
     /**
@@ -360,8 +354,8 @@ public class ShootingSystem {
      * @param position Servo position (0.0 to 1.0)
      */
     public void setBallPushPosition(double position) {
-        if (ballPushServo != null) {
-            ballPushServo.setPosition(position);
+        if (servos != null && servos.ballpush_4 != null) {
+            servos.ballpush_4.setPosition(position);
         }
     }
 
@@ -370,21 +364,10 @@ public class ShootingSystem {
      * @return Current servo position (0.0 to 1.0)
      */
     public double getBallPushPosition() {
-        if (ballPushServo != null) {
-            return ballPushServo.getPosition();
+        if (servos != null && servos.ballpush_4 != null) {
+            return servos.ballpush_4.getPosition();
         }
         return 0.0;
-    }
-
-    /**
-     * Check if ball push servo is fully retracted using touch sensor
-     * @return true if ball push is retracted (sensor pressed), false otherwise
-     */
-    public boolean isBallPushRetracted() {
-        if (ballPushSensor != null) {
-            return ballPushSensor.isPressed();
-        }
-        return false; // If no sensor, assume not retracted
     }
 }
 

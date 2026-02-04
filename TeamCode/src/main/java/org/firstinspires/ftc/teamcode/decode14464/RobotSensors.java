@@ -1,17 +1,21 @@
 package org.firstinspires.ftc.teamcode.decode14464;
 
 import android.graphics.Color;
-import com.qualcomm.robotcore.hardware.ColorSensor;
 import com.qualcomm.robotcore.hardware.DistanceSensor;
 import com.qualcomm.robotcore.hardware.NormalizedColorSensor;
 import com.qualcomm.robotcore.hardware.NormalizedRGBA;
 import com.qualcomm.robotcore.hardware.HardwareMap;
+import com.qualcomm.robotcore.hardware.TouchSensor;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
+import org.firstinspires.ftc.teamcode.decode14464.systems.RobotConstants;
 
 public class RobotSensors {
     public NormalizedColorSensor color_br;
     public NormalizedColorSensor color_bl;
     public NormalizedColorSensor color_f;
+
+    // Touch sensor for ball push detection (Digital Port 1, 3, 5, or 7 only!)
+    public TouchSensor ballPushSensor;
 
     // FTC Best Practice: Configurable parameters
     private static final float GAIN = 2.0f;  // Software gain (adjust for lighting)
@@ -28,6 +32,10 @@ public class RobotSensors {
         if (color_br != null) color_br.setGain(GAIN);
         if (color_bl != null) color_bl.setGain(GAIN);
         if (color_f != null) color_f.setGain(GAIN);
+
+        // Initialize touch sensor for ball push detection
+        // NOTE: REV Touch Sensors must be on Digital Port 1, 3, 5, or 7 ONLY!
+        ballPushSensor = hardwareMap.get(TouchSensor.class, RobotConstants.BallPush.TOUCH_SENSOR_NAME);
     }
 
     /**
@@ -180,6 +188,17 @@ public class RobotSensors {
         Color.colorToHSV(colors.toColor(), hsv);
 
         return String.format("H:%.0f S:%.2f V:%.2f", hsv[0], hsv[1], hsv[2]);
+    }
+
+    /**
+     * Check if ball push servo is fully retracted using touch sensor
+     * @return true if ball push is retracted (sensor pressed), false otherwise
+     */
+    public boolean isBallPushRetracted() {
+        if (ballPushSensor != null) {
+            return ballPushSensor.isPressed();
+        }
+        return false; // If no sensor, assume not retracted
     }
 
     /**
