@@ -4,13 +4,16 @@ import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 
 /**
- * Simple TeleOp - Focus on Auto-Intake and Auto-Shooting
+ * Simple TeleOp - Focus on Auto-Intake and Auto-Shooting with Manual Override
  *
  * Controls:
  * ========
  * GAMEPAD 1:
  * - A/Cross: Toggle Intake/Launch Mode (works with both PS4 and Xbox controllers)
  * - Right Bumper: Auto-Shoot (shoots all balls in turret)
+ * - D-Pad Left: Manual turret retreat (previous slot) - OVERRIDE
+ * - D-Pad Right: Manual turret advance (next slot) - OVERRIDE
+ * - Right Trigger: Manual ball push (launch individual ball) - OVERRIDE
  * - Left Stick: Drive (X/Y movement)
  * - Right Stick X: Rotation
  *
@@ -18,8 +21,18 @@ import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
  * =========
  * - Auto-Intake: Automatically advances turret when ball detected
  * - Auto-Shoot: Automatically shoots all loaded balls
+ * - Manual Override: D-Pad controls work even when auto is active
+ * - Manual Launch: Right trigger for individual ball launching
  * - Simple mode switching between Intake and Launch
  * - Supports both PS4 (Cross/Circle) and Xbox (A/B) controllers
+ *
+ * Fallback Mechanism:
+ * ===================
+ * If auto-intake malfunctions, driver can manually control turret:
+ * - Use D-Pad Left/Right to manually advance/retreat turret positions
+ * - Use Right Trigger to manually push balls (instead of auto-shoot)
+ * - Manual controls work in both INTAKE and LAUNCH modes
+ * - System respects current mode (uses INTAKE or LAUNCH positions)
  */
 @TeleOp(name = "Simple Auto TeleOp", group = "Main")
 public class SimpleAutoTeleOp extends OpMode {
@@ -29,6 +42,8 @@ public class SimpleAutoTeleOp extends OpMode {
     // Button state tracking for edge detection
     private boolean prevA = false;
     private boolean prevRightBumper = false;
+    private boolean prevDpadLeft = false;
+    private boolean prevDpadRight = false;
 
     // Shooter velocity (high velocity only for simplicity)
     private static final double SHOOTER_VELOCITY = 1460;
@@ -94,6 +109,39 @@ public class SimpleAutoTeleOp extends OpMode {
         }
         prevA = aPressed;
 
+        // ========== MANUAL TURRET OVERRIDE (D-Pad Left/Right) ==========
+        // D-Pad Left: Move to previous slot (manual retreat)
+        if (gamepad1.dpad_left && !prevDpadLeft) {
+            robot.autoIntake.moveToPreviousSlot();
+            telemetry.addLine("⬅️ Manual: Previous Slot");
+        }
+        prevDpadLeft = gamepad1.dpad_left;
+
+        // D-Pad Right: Move to next slot (manual advance)
+        if (gamepad1.dpad_right && !prevDpadRight) {
+            robot.autoIntake.advanceToNextSlot();
+            telemetry.addLine("➡️ Manual: Next Slot");
+        }
+        prevDpadRight = gamepad1.dpad_right;
+
+        // ========== MANUAL BALL LAUNCH (Right Trigger) ==========
+        // Right Trigger: Manual ball push servo control (only in launch mode AND when auto-shoot is NOT active)
+        if (!robot.autoIntake.isIntakeMode() && !robot.autoShoot.isInProgress()) {
+            // Map trigger (0.0 to 1.0) to servo offset (0.0 to 0.27)
+            double triggerValue = gamepad1.right_trigger;
+            double servoOffset = triggerValue * 0.27;
+
+            // Set ball push servo position
+            // Initial position + offset moves servo forward to push ball
+            robot.servos.ballpush_4.setPosition(
+                robot.servos.ballpush_initial_position + servoOffset
+            );
+        } else if (robot.autoIntake.isIntakeMode() && !robot.autoShoot.isInProgress()) {
+            // In intake mode AND auto-shoot not active, keep ball push servo at initial position
+            robot.servos.ballpush_4.setPosition(robot.servos.ballpush_initial_position);
+        }
+        // If auto-shoot IS active, don't touch the servo - let AutoShootSystem control it!
+
         // ========== AUTO-SHOOT ==========
         // Right Bumper: Start auto-shooting sequence
         // Support both controller types
@@ -154,6 +202,9 @@ public class SimpleAutoTeleOp extends OpMode {
         telemetry.addLine("====== CONTROLS ======");
         telemetry.addData("A/Cross", "Toggle Mode");
         telemetry.addData("Right Bumper", "Auto-Shoot");
+        telemetry.addData("D-Pad L/R", "Manual Turret");
+        telemetry.addData("Right Trigger", robot.autoIntake.isIntakeMode() ? "Disabled" :
+            String.format("Manual Push (%.0f%%)", gamepad1.right_trigger * 100));
 
         telemetry.update();
     }

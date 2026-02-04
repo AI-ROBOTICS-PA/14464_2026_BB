@@ -13,10 +13,17 @@ public class RobotMotors {
 
 
     public void init(HardwareMap hardwareMap) {
+        // Initialize intake motor
         intake = hardwareMap.get(DcMotor.class, "intake");
         intake.setDirection(DcMotor.Direction.REVERSE);
-        // shooter = hardwareMap.get(DcMotorEx.class, "shooter");  // Use DcMotorEx for velocity control
+
+        // Initialize turret motor with proper configuration
         turret = hardwareMap.get(DcMotorEx.class, "turret");
+        turret.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        turret.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        turret.setDirection(DcMotor.Direction.FORWARD);
+        turret.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+
         // Initialize the flywheel motor (using your "shooter" motor)
         flywheelMotor = hardwareMap.get(DcMotorEx.class, "shooter");
         flywheelMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
@@ -27,9 +34,6 @@ public class RobotMotors {
         // Set initial PIDF coefficients (P, I, D, F)
         PIDFCoefficients pidfCoefficients = new PIDFCoefficients(300, 0, 0, 13.65);
         flywheelMotor.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER, pidfCoefficients);
-
-
-        // Add drivetrain motor initialization here if needed
     }
 
     /**
