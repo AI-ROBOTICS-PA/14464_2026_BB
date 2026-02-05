@@ -90,7 +90,8 @@ public class SimpleAutoTeleOp extends OpMode {
         robot.localization.getFollower().setTeleOpDrive(
             -gamepad1.left_stick_y,
             -gamepad1.left_stick_x,
-            -gamepad1.right_stick_x
+            -gamepad1.right_stick_x,
+            true // Field-centric control
         );
 
         // ========== MODE SWITCHING ==========

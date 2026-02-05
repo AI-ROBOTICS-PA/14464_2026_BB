@@ -46,7 +46,10 @@ public class TurretTest extends OpMode {
     private double turretTargetPosition = 0;  // Target encoder position
     private double lastHeading = 0;           // Last robot heading (for delta calculation)
     private double totalRobotRotation = 0;    // Total accumulated robot rotation (degrees)
+    private double lastTotalRotation = 0;     // Previous total rotation (to detect direction changes)
     private double initialHeading = 0;        // Starting heading to track total rotation
+    private boolean hasUnwound = false;       // Prevent repeated unwinding in same reversal
+    private double previousHeadingChange = 0; // Track direction of rotation for reversal detection
 
     // PID control
     private double previousError = 0;
@@ -57,13 +60,14 @@ public class TurretTest extends OpMode {
     private static final double MAX_ENCODER_POSITION = 1083;  // ~360 degrees (full rotation)
     private static final double MIN_ENCODER_POSITION = -1083; // ~-360 degrees (full rotation)
     private static final double WIRE_LIMIT = 360;  // Auto-unwind at exactly 360° (one full rotation)
+    private static final double UNWIND_HYSTERESIS = 10;  // Don't re-trigger unwind until 10° past limit
 
-    // Control parameters - Tuned for VERY smooth motion
-    private static final double KP = 0.006;                   // Proportional gain (further reduced)
-    private static final double KI = 0.0;                     // Integral gain
-    private static final double KD = 0.0005;                  // Derivative gain (further reduced)
-    private static final double MAX_POWER = 0.35;             // Further reduced max power
-    private static final double POSITION_TOLERANCE = 25;      // ticks (~8.3 degrees) - even wider tolerance
+    // Control parameters - Optimized for GoBilda 5203 312 RPM motor (high torque, slower speed)
+    private static final double KP = 0.010;                   // Proportional gain - increased 67% for faster response
+    private static final double KI = 0.0;                     // Integral gain - kept at 0 to avoid windup
+    private static final double KD = 0.0015;                  // Derivative gain - tripled for better damping, less overshoot
+    private static final double MAX_POWER = 0.45;             // Increased power limit - 312 RPM motor can handle more
+    private static final double POSITION_TOLERANCE = 12;      // ticks (~4 degrees) - tighter accuracy for shooting
 
     // Button state tracking
     private boolean prevDpadUp = false;
@@ -73,13 +77,12 @@ public class TurretTest extends OpMode {
 
     @Override
     public void init() {
-        // Initialize motors
+        // Initialize motors (RobotMotors.init() already configures encoder and brake mode)
         motors = new RobotMotors();
         motors.init(hardwareMap);
 
-        // Reset and configure turret motor
-        motors.turret.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        motors.turret.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        // Note: RobotMotors.init() already resets encoder and sets RUN_USING_ENCODER mode
+        // Just ensure brake mode is set (redundant but safe)
         motors.turret.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
         // Initialize localization
@@ -113,6 +116,8 @@ public class TurretTest extends OpMode {
         initialHeading = localization.getHeadingDegrees();
         lastHeading = initialHeading;
         totalRobotRotation = 0;
+        lastTotalRotation = 0;
+        hasUnwound = false;
         turretTargetPosition = motors.turret.getCurrentPosition();
 
         telemetry.addLine("🚀 Turret Test Started!");
@@ -155,7 +160,8 @@ public class TurretTest extends OpMode {
         localization.getFollower().setTeleOpDrive(
             -gamepad1.left_stick_y,
             -gamepad1.left_stick_x,
-            -gamepad1.right_stick_x
+            -gamepad1.right_stick_x,
+            false  // Robot-centric drive (set to true for field-centric)
         );
 
         // ========== TURRET CONTROL BASED ON MODE ==========
@@ -191,7 +197,7 @@ public class TurretTest extends OpMode {
      * Turret rotates opposite to robot rotation to maintain its field orientation
      * When robot turns right (+), turret turns left (-) relative to robot
      *
-     * SIMPLE LOGIC: Only fix large jumps (boundary crossings), otherwise follow heading directly
+     * SMART: Detects direction reversal using total rotation tracking
      */
     private void updateCounterRotation() {
         double currentHeading = localization.getHeadingDegrees();
@@ -203,30 +209,74 @@ public class TurretTest extends OpMode {
         // Example: Robot jumps from 357° to 7° in ONE step → raw change is -350°
         if (rawHeadingChange > 180) {
             headingChange = rawHeadingChange - 360;
-            telemetry.log().add("Boundary: " + String.format("%.0f", rawHeadingChange) + "° → " + String.format("%.0f", headingChange) + "°");
+            telemetry.log().add("Boundary jump: " + String.format("%.0f", rawHeadingChange) + "° → " + String.format("%.0f", headingChange) + "°");
         } else if (rawHeadingChange < -180) {
             headingChange = rawHeadingChange + 360;
-            telemetry.log().add("Boundary: " + String.format("%.0f", rawHeadingChange) + "° → " + String.format("%.0f", headingChange) + "°");
+            telemetry.log().add("Boundary jump: " + String.format("%.0f", rawHeadingChange) + "° → " + String.format("%.0f", headingChange) + "°");
         }
-        // Otherwise: use raw change directly (allows smooth 0→100→200→360 tracking)
 
-        // Track total rotation
+        // Track total rotation BEFORE applying heading change
+        double previousTotalRotation = totalRobotRotation;
         totalRobotRotation += headingChange;
 
-        // Counter-rotate: if robot turns right (+), turret turns left (-)
+        // Counter-rotate FIRST: if robot turns right (+), turret turns left (-)
         turretTargetPosition -= headingChange * TICKS_PER_DEGREE;
 
-        // WIRE LIMIT: Only unwind at ±360° (safety backup)
+        // REVERSAL DETECTION: Detect when robot changes rotation direction after completing 360°
+        // Uses direction change detection instead of threshold-based approach
+        boolean reversalDetected = false;
+
+        // Detect direction change: sign of heading change flipped
+        boolean directionChanged = (previousHeadingChange != 0) && 
+                                   (Math.signum(headingChange) != Math.signum(previousHeadingChange)) &&
+                                   (Math.abs(headingChange) > 1.0);  // Ignore tiny oscillations
+
+        // Reset the unwind flag when we complete another full rotation in same direction
+        if (Math.abs(totalRobotRotation) > 360 && !directionChanged) {
+            hasUnwound = false;  // Reset flag, ready for next reversal
+        }
+
+        // Detect reversal: direction changed AND we've rotated past 360° AND haven't unwound yet
+        if (!hasUnwound && directionChanged && Math.abs(lastTotalRotation) > 300) {
+            reversalDetected = true;
+            hasUnwound = true;  // SET FLAG to prevent repeated unwinding
+            telemetry.log().add("🔄 REVERSAL! Direction changed at " + String.format("%.0f", totalRobotRotation) + "°");
+        }
+
+        // Update previous heading change for next iteration
+        if (Math.abs(headingChange) > 0.5) {  // Only update if significant movement
+            previousHeadingChange = headingChange;
+        }
+
+        // If reversal detected, unwind turret ONCE to prevent wire tangling
+        if (reversalDetected) {
+            double currentTurretDegrees = turretTargetPosition / TICKS_PER_DEGREE;
+
+            // Force turret to unwind by ±360° to take shorter path
+            if (Math.abs(currentTurretDegrees) > 20) {
+                if (currentTurretDegrees > 0) {
+                    turretTargetPosition -= 360.0 * TICKS_PER_DEGREE;
+                    telemetry.log().add("⚡ UNWIND: Turret " + String.format("%.0f", currentTurretDegrees) + "° → " + String.format("%.0f", currentTurretDegrees - 360) + "°");
+                } else {
+                    turretTargetPosition += 360.0 * TICKS_PER_DEGREE;
+                    telemetry.log().add("⚡ UNWIND: Turret " + String.format("%.0f", currentTurretDegrees) + "° → " + String.format("%.0f", currentTurretDegrees + 360) + "°");
+                }
+            }
+        }
+
+
+        // WIRE LIMIT: Safety at ±360° with hysteresis to prevent oscillation
         double currentTurretDegrees = turretTargetPosition / TICKS_PER_DEGREE;
-        if (currentTurretDegrees > WIRE_LIMIT) {
+        if (currentTurretDegrees > WIRE_LIMIT + UNWIND_HYSTERESIS) {
             turretTargetPosition -= 360.0 * TICKS_PER_DEGREE;
-            telemetry.log().add("WIRE LIMIT: Unwinding -360°");
-        } else if (currentTurretDegrees < -WIRE_LIMIT) {
+            telemetry.log().add("⚠️ WIRE LIMIT +360°: Unwinding -360°");
+        } else if (currentTurretDegrees < -(WIRE_LIMIT + UNWIND_HYSTERESIS)) {
             turretTargetPosition += 360.0 * TICKS_PER_DEGREE;
-            telemetry.log().add("WIRE LIMIT: Unwinding +360°");
+            telemetry.log().add("⚠️ WIRE LIMIT -360°: Unwinding +360°");
         }
 
         lastHeading = currentHeading;
+        lastTotalRotation = totalRobotRotation;
     }
 
     /**
@@ -243,18 +293,16 @@ public class TurretTest extends OpMode {
         // Get robot heading
         double robotHeading = localization.getHeadingDegrees();
 
-        // Track total rotation
+        // Track total rotation - use efficient normalization
         double headingChange = robotHeading - lastHeading;
-        while (headingChange > 180) headingChange -= 360;
-        while (headingChange < -180) headingChange += 360;
+        headingChange = normalizeAngle(headingChange);
         totalRobotRotation += headingChange;
 
         // Calculate turret angle needed (relative to robot)
         double turretAngle = angleToGoal - robotHeading;
 
         // Normalize to -180 to 180
-        while (turretAngle > 180) turretAngle -= 360;
-        while (turretAngle < -180) turretAngle += 360;
+        turretAngle = normalizeAngle(turretAngle);
 
         // Convert to encoder position
         turretTargetPosition = turretAngle * TICKS_PER_DEGREE;
@@ -294,12 +342,13 @@ public class TurretTest extends OpMode {
             return;
         }
 
-        // PID calculation
-        integral += error;
-
-        // Anti-windup: limit integral to prevent excessive buildup
-        double integralLimit = 500;  // Reduced for smoother response
-        integral = Math.max(-integralLimit, Math.min(integralLimit, integral));
+        // PID calculation - only accumulate integral if KI is non-zero
+        if (KI != 0) {
+            integral += error;
+            // Anti-windup: limit integral to prevent excessive buildup
+            double integralLimit = 500;
+            integral = Math.max(-integralLimit, Math.min(integralLimit, integral));
+        }
 
         double derivative = error - previousError;
 
@@ -344,12 +393,13 @@ public class TurretTest extends OpMode {
             return;
         }
 
-        // PID calculation
-        integral += error;
-
-        // Anti-windup: limit integral to prevent excessive buildup
-        double integralLimit = 500;  // Reduced for smoother response
-        integral = Math.max(-integralLimit, Math.min(integralLimit, integral));
+        // PID calculation - only accumulate integral if KI is non-zero
+        if (KI != 0) {
+            integral += error;
+            // Anti-windup: limit integral to prevent excessive buildup
+            double integralLimit = 500;
+            integral = Math.max(-integralLimit, Math.min(integralLimit, integral));
+        }
 
         double derivative = error - previousError;
 
@@ -413,9 +463,26 @@ public class TurretTest extends OpMode {
     private void resetTurretTracking() {
         lastHeading = localization.getHeadingDegrees();
         totalRobotRotation = 0;  // Reset rotation counter when changing modes
+        lastTotalRotation = 0;   // Reset last total rotation tracker
+        hasUnwound = false;      // Reset unwind flag
+        previousHeadingChange = 0;  // Reset direction tracking
         turretTargetPosition = motors.turret.getCurrentPosition();
         previousError = 0;
         integral = 0;
+    }
+
+    /**
+     * Normalize angle to range -180 to 180 degrees
+     * More efficient than while loops for large angles
+     */
+    private double normalizeAngle(double angle) {
+        angle = angle % 360;
+        if (angle > 180) {
+            angle -= 360;
+        } else if (angle < -180) {
+            angle += 360;
+        }
+        return angle;
     }
 
     /**
@@ -443,9 +510,7 @@ public class TurretTest extends OpMode {
         // Show heading change in counter-rotation mode
         if (currentMode == TestMode.COUNTER_ROTATION || currentMode == TestMode.COMBINED) {
             double currentHeading = localization.getHeadingDegrees();
-            double headingChange = currentHeading - lastHeading;
-            while (headingChange > 180) headingChange -= 360;
-            while (headingChange < -180) headingChange += 360;
+            double headingChange = normalizeAngle(currentHeading - lastHeading);
             telemetry.addData("⚡ Heading Change", "%.2f° (turret compensating)", headingChange);
         }
 
