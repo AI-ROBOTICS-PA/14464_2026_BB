@@ -2,7 +2,6 @@ package org.firstinspires.ftc.teamcode.decode14464.systems;
 
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
-import org.firstinspires.ftc.teamcode.decode14464.HoodConstants;
 import org.firstinspires.ftc.teamcode.decode14464.LimelightManager;
 
 /**
@@ -282,8 +281,8 @@ public class DecodeTeleOp extends OpMode {
         // D-Pad Up: Increment hood position (increase angle)
         if (gamepad2.dpad_up && !prevGP2DpadUp) {
             currentHoodPosition += HOOD_INCREMENT;
-            if (currentHoodPosition > HoodConstants.HOOD_MAX_POSITION) {
-                currentHoodPosition = HoodConstants.HOOD_MAX_POSITION;
+            if (currentHoodPosition > RobotConstants.Hood.MAX_POSITION) {
+                currentHoodPosition = RobotConstants.Hood.MAX_POSITION;
             }
             isHoodCustomPosition = true; // Mark as custom position
             if (robot.servos != null && robot.servos.hood_5 != null) {
@@ -296,8 +295,8 @@ public class DecodeTeleOp extends OpMode {
         // D-Pad Down: Decrement hood position (decrease angle)
         if (gamepad2.dpad_down && !prevGP2DpadDown) {
             currentHoodPosition -= HOOD_INCREMENT;
-            if (currentHoodPosition < HoodConstants.HOOD_MIN_POSITION) {
-                currentHoodPosition = HoodConstants.HOOD_MIN_POSITION;
+            if (currentHoodPosition < RobotConstants.Hood.MIN_POSITION) {
+                currentHoodPosition = RobotConstants.Hood.MIN_POSITION;
             }
             isHoodCustomPosition = true; // Mark as custom position
             if (robot.servos != null && robot.servos.hood_5 != null) {
@@ -731,7 +730,7 @@ public class DecodeTeleOp extends OpMode {
         telemetry.addLine();
         telemetry.addLine("─── HOOD ───");
         telemetry.addData("Position", "%.2f", currentHoodPosition);
-        telemetry.addData("Range", "%.2f - %.2f", HoodConstants.HOOD_MIN_POSITION, HoodConstants.HOOD_MAX_POSITION);
+        telemetry.addData("Range", "%.2f - %.2f", RobotConstants.Hood.MIN_POSITION, RobotConstants.Hood.MAX_POSITION);
     }
 
     /**

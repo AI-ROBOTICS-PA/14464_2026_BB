@@ -3,6 +3,7 @@ package org.firstinspires.ftc.teamcode.decode14464;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.Servo;
+import org.firstinspires.ftc.teamcode.decode14464.systems.RobotConstants;
 
 /**
  * HoodHeightTuner - Tune hood servo position based on distance from AprilTag
@@ -34,11 +35,11 @@ public class HoodHeightTuner extends OpMode {
     private LimelightManager limelightManager = new LimelightManager();
 
     // ========== CONFIGURATION FROM CONSTANTS ==========
-    private double hoodMinPosition = HoodConstants.HOOD_MIN_POSITION;  // 0.28
-    private double hoodMaxPosition = HoodConstants.HOOD_MAX_POSITION;  // 0.80
-    private double minDistance = HoodConstants.MIN_DISTANCE_INCHES;    // 20.0 inches
-    private double maxDistance = HoodConstants.MAX_DISTANCE_INCHES;    // 100.0 inches
-    private int currentTargetTagID = HoodConstants.PRIMARY_TAG_ID;     // 20
+    private double hoodMinPosition = RobotConstants.Hood.MIN_POSITION;        // 0.28
+    private double hoodMaxPosition = RobotConstants.Hood.MAX_POSITION;        // 0.82
+    private double minDistance = RobotConstants.Hood.MIN_DISTANCE_INCHES;     // 20.0 inches
+    private double maxDistance = RobotConstants.Hood.MAX_DISTANCE_INCHES;     // 100.0 inches
+    private int currentTargetTagID = RobotConstants.Turret.PRIMARY_TAG_ID;    // 20
 
     // ========== TUNING CONTROLS ==========
     // Step sizes for dynamic tuning
@@ -52,7 +53,7 @@ public class HoodHeightTuner extends OpMode {
     private boolean autoAdjustEnabled = false;
     private boolean tagVisible = false;
     private double currentDistance = 0.0;
-    private double calculatedPosition = HoodConstants.HOME_POSITION;
+    private double calculatedPosition = RobotConstants.Hood.HOME_POSITION;
 
     // Button state tracking
     private boolean prevCross = false;
@@ -67,8 +68,8 @@ public class HoodHeightTuner extends OpMode {
     @Override
     public void init() {
         // Initialize hood servo
-        hoodServo = hardwareMap.get(Servo.class, HoodConstants.HOOD_SERVO_NAME);
-        hoodServo.setPosition(HoodConstants.HOME_POSITION);
+        hoodServo = hardwareMap.get(Servo.class, RobotConstants.Hood.SERVO_NAME);
+        hoodServo.setPosition(RobotConstants.Hood.HOME_POSITION);
 
         // Initialize Limelight
         limelightManager.init(hardwareMap);
@@ -121,19 +122,15 @@ public class HoodHeightTuner extends OpMode {
         }
         prevCross = gamepad1.cross;
 
-        // Switch target tag with Triangle
+        // Switch target tag with Triangle (now uses alliance toggle)
         if (gamepad1.triangle && !prevTriangle) {
-            if (currentTargetTagID == HoodConstants.PRIMARY_TAG_ID) {
-                currentTargetTagID = HoodConstants.SECONDARY_TAG_ID;
-            } else {
-                currentTargetTagID = HoodConstants.PRIMARY_TAG_ID;
-            }
+            limelightManager.toggleAlliance();
         }
         prevTriangle = gamepad1.triangle;
 
         // Reset to home with Circle
         if (gamepad1.circle && !prevCircle) {
-            hoodServo.setPosition(HoodConstants.HOME_POSITION);
+            hoodServo.setPosition(RobotConstants.Hood.HOME_POSITION);
             autoAdjustEnabled = false;
         }
         prevCircle = gamepad1.circle;
@@ -234,7 +231,7 @@ public class HoodHeightTuner extends OpMode {
         double t = (distance - minDistance) / (maxDistance - minDistance);
 
         // Map to servo position
-        if (HoodConstants.INVERT_DISTANCE_MAPPING) {
+        if (RobotConstants.Hood.INVERT_DISTANCE_MAPPING) {
             // Closer = lower position, farther = higher position
             return hoodMinPosition + (hoodMaxPosition - hoodMinPosition) * t;
         } else {
@@ -306,7 +303,7 @@ public class HoodHeightTuner extends OpMode {
     @Override
     public void stop() {
         // Return to home position
-        hoodServo.setPosition(HoodConstants.HOME_POSITION);
+        hoodServo.setPosition(RobotConstants.Hood.HOME_POSITION);
         limelightManager.stop();
     }
 }

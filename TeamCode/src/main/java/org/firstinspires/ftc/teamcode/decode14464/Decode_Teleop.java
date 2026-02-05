@@ -9,6 +9,7 @@ import com.pedropathing.paths.PathChain;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
+import org.firstinspires.ftc.teamcode.decode14464.systems.RobotConstants;
 import org.firstinspires.ftc.teamcode.decode14464.systems.RobotMotors;
 import org.firstinspires.ftc.teamcode.decode14464.systems.RobotServos;
 import org.firstinspires.ftc.teamcode.decode14464.systems.RobotSensors;
@@ -44,7 +45,7 @@ public class Decode_Teleop extends OpMode {
 
     // Hood servo control
     private final double HOOD_INCREMENT = 0.02; // Amount to increment/decrement for fine control
-    private double hood_servoPosition = HoodConstants.HOME_POSITION; // Initial servo position
+    private double hood_servoPosition = RobotConstants.Hood.HOME_POSITION; // Initial servo position
 
     // Hood preset positions for gamepad1 toggle
     private static final double HOOD_LONG_RANGE = 0.5;  // Long distance shooting
@@ -142,7 +143,7 @@ public class Decode_Teleop extends OpMode {
             robotServos.turret_1.setPosition(0.5); // Mid-range neutral position
         }
         if (robotServos.hood_5 != null) {
-            robotServos.hood_5.setPosition(HoodConstants.HOME_POSITION); // Safe home position
+            robotServos.hood_5.setPosition(RobotConstants.Hood.HOME_POSITION); // Safe home position
         }
         if (robotServos.ballpush_4 != null) {
             robotServos.ballpush_4.setPosition(robotServos.ballpush_initial_position);
@@ -430,8 +431,8 @@ public class Decode_Teleop extends OpMode {
         if (gamepad2.dpad_up && !prevDpadRightPressed2) {
             // Increment hood position (increase angle)
             hood_servoPosition += HOOD_INCREMENT;
-            if (hood_servoPosition > HoodConstants.HOOD_MAX_POSITION) {
-                hood_servoPosition = HoodConstants.HOOD_MAX_POSITION;
+            if (hood_servoPosition > RobotConstants.Hood.MAX_POSITION) {
+                hood_servoPosition = RobotConstants.Hood.MAX_POSITION;
             }
             if (robotServos.hood_5 != null) {
                 robotServos.hood_5.setPosition(hood_servoPosition);
@@ -444,8 +445,8 @@ public class Decode_Teleop extends OpMode {
         if (gamepad2.dpad_down && !prevDpadLeftPressed2) {
             // Decrement hood position (decrease angle)
             hood_servoPosition -= HOOD_INCREMENT;
-            if (hood_servoPosition < HoodConstants.HOOD_MIN_POSITION) {
-                hood_servoPosition = HoodConstants.HOOD_MIN_POSITION;
+            if (hood_servoPosition < RobotConstants.Hood.MIN_POSITION) {
+                hood_servoPosition = RobotConstants.Hood.MIN_POSITION;
             }
             if (robotServos.hood_5 != null) {
                 robotServos.hood_5.setPosition(hood_servoPosition);

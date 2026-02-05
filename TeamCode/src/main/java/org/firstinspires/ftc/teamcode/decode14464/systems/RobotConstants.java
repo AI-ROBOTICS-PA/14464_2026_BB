@@ -48,17 +48,26 @@ public class RobotConstants {
 
     // ==================== HOOD SERVO CONSTANTS ====================
     public static final class Hood {
+        // Servo hardware name
+        public static final String SERVO_NAME = "hood_5";
+        
         // Servo position range
-        public static final double MIN_POSITION = 0.28;
-        public static final double MAX_POSITION = 0.80;
-        public static final double HOME_POSITION = 0.50;
+        public static final double MIN_POSITION = 0.28;   // Highest hood angle
+        public static final double MAX_POSITION = 0.82;   // Lowest hood angle
+        public static final double HOME_POSITION = 0.80;  // Initial/home position
+        public static final double DEFAULT_POSITION = 0.50; // Default when no tag visible
 
-        // Preset positions
-        public static final double LONG_RANGE_POSITION = 0.50;
-        public static final double SHORT_RANGE_POSITION = 0.80;
+        // Preset positions for manual control
+        public static final double LONG_RANGE_POSITION = 0.30;   // Flattest angle
+        public static final double MID_RANGE_POSITION = 0.55;    // Mid-range
+        public static final double SHORT_RANGE_POSITION = 0.80;  // Steepest angle
 
-        // Distance-based mapping (distance in inches -> servo position)
-        // Tune these based on testing
+        // Distance-based auto-hood mapping
+        public static final double MIN_DISTANCE_INCHES = 20.0;   // At this distance -> MAX_POSITION
+        public static final double MAX_DISTANCE_INCHES = 100.0;  // At this distance -> MIN_POSITION
+        public static final boolean INVERT_DISTANCE_MAPPING = false;
+
+        // Distance-based position lookup (for interpolation)
         public static final double CLOSE_DISTANCE = 36.0;   // inches
         public static final double CLOSE_POSITION = 0.80;
 
