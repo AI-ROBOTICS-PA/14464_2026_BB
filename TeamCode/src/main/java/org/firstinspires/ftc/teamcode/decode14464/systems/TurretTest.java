@@ -29,12 +29,17 @@ import org.firstinspires.ftc.teamcode.decode14464.LimelightManager;
  *   D-Pad Left    - Manual Mode (disable auto-turret)
  *
  * GAMEPAD 2 (Testing Features - All Toggleable):
+ *   D-Pad Up      - Toggle ALLIANCE (BLUE=Tag 20, RED=Tag 24)
  *   A/Cross       - Toggle LIMELIGHT on/off
  *   B/Circle      - Toggle AUTO-CALIBRATION on/off
  *   X/Square      - MANUAL CALIBRATION (one-shot recalibrate turret position)
  *   Y/Triangle    - LIMELIGHT CALIBRATION (one-shot AprilTag calibration)
  *   Left Bumper   - Reset localization to (0,0,0)
  *   Right Bumper  - Reset turret encoder to 0
+ *
+ * Alliance-based AprilTag Filtering:
+ * - BLUE Alliance: Uses Tag ID 20 for calibration
+ * - RED Alliance: Uses Tag ID 24 for calibration
  *
  * Supports both Xbox and PS4 controllers!
  */
@@ -64,6 +69,7 @@ public class TurretTest extends OpMode {
     private boolean prevGP2Y = false;
     private boolean prevGP2LeftBumper = false;
     private boolean prevGP2RightBumper = false;
+    private boolean prevGP2DpadUp = false; // For alliance toggle
 
     // Test modes
     private enum TestMode {
@@ -273,6 +279,23 @@ public class TurretTest extends OpMode {
             telemetry.log().add("🎯 Turret encoder RESET to 0");
         }
         prevGP2RightBumper = gamepad2.right_bumper;
+
+        // D-Pad Up: Toggle Alliance (BLUE/RED)
+        // This changes which AprilTag ID is used for calibration (BLUE=20, RED=24)
+        if (gamepad2.dpad_up && !prevGP2DpadUp) {
+            if (limelight != null) {
+                limelight.toggleAlliance();
+                // Long rumble for RED, short rumble for BLUE
+                if (limelight.getAlliance() == LimelightManager.Alliance.RED) {
+                    gamepad2.rumble(400); // Long = RED
+                    telemetry.log().add("🔴 Alliance: RED (Tag 24)");
+                } else {
+                    gamepad2.rumble(150); // Short = BLUE
+                    telemetry.log().add("🔵 Alliance: BLUE (Tag 20)");
+                }
+            }
+        }
+        prevGP2DpadUp = gamepad2.dpad_up;
 
         // ========== LIMELIGHT UPDATE (if enabled) ==========
         if (limelightEnabled && limelight != null) {
@@ -758,10 +781,12 @@ public class TurretTest extends OpMode {
             return;
         }
 
-        if (!limelight.hasValidTarget()) {
+        // Only calibrate if our ALLIANCE TAG is visible (not just any tag)
+        if (!limelight.hasAllianceTarget()) {
             if (isManual) {
-                lastCalibrationStatus = "FAILED: No AprilTag";
-                telemetry.log().add("❌ No AprilTag visible!");
+                int targetTag = limelight.getTargetTagId();
+                lastCalibrationStatus = "FAILED: Tag " + targetTag + " not visible";
+                telemetry.log().add("❌ Alliance Tag " + targetTag + " not visible!");
             }
             return;
         }
@@ -821,8 +846,8 @@ public class TurretTest extends OpMode {
             return;
         }
 
-        // Check if Limelight has valid target
-        if (limelight == null || !limelight.hasValidTarget()) {
+        // Check if Limelight has our alliance's tag visible (not just any tag)
+        if (limelight == null || !limelight.hasAllianceTarget()) {
             return;
         }
 
@@ -937,13 +962,23 @@ public class TurretTest extends OpMode {
             telemetry.addLine("===== LIMELIGHT =====");
             if (limelight.isConnected()) {
                 telemetry.addData("Status", "✓ Connected");
-                if (limelight.hasValidTarget()) {
-                    telemetry.addData("AprilTag", "✓ VISIBLE");
+                // Show alliance and target tag
+                String allianceStr = limelight.getAlliance() == LimelightManager.Alliance.BLUE ? "BLUE" : "RED";
+                int targetTag = limelight.getTargetTagId();
+                telemetry.addData("Alliance", "%s (Target: Tag %d)", allianceStr, targetTag);
+                // Show all visible tags (with * marking our target)
+                telemetry.addData("Tags Seen", limelight.getVisibleTagIdsString());
+                // Show tx/ty if our alliance tag is visible
+                if (limelight.hasAllianceTarget()) {
+                    telemetry.addData("AprilTag", "✓ Tag %d VISIBLE", targetTag);
                     telemetry.addData("tx (offset)", "%.1f°", limelight.getTargetX());
                     telemetry.addData("ty (vertical)", "%.1f°", limelight.getTargetY());
-                    telemetry.addData("Tags Seen", limelight.getVisibleTagCount());
+                } else if (limelight.hasValidTarget()) {
+                    telemetry.addData("AprilTag", "⚠️ Other tag (not %d)", targetTag);
+                    telemetry.addData("tx (offset)", "%.1f° (other)", limelight.getTargetX());
+                    telemetry.addData("ty (vertical)", "%.1f° (other)", limelight.getTargetY());
                 } else {
-                    telemetry.addData("AprilTag", "✗ Not visible");
+                    telemetry.addData("AprilTag", "✗ Tag %d not visible", targetTag);
                 }
             } else {
                 telemetry.addData("Status", "✗ Not connected");
@@ -953,6 +988,9 @@ public class TurretTest extends OpMode {
 
         telemetry.addLine();
         telemetry.addLine("====== GP2 CONTROLS ======");
+        String allianceDisplay = limelight != null ? 
+            (limelight.getAlliance() == LimelightManager.Alliance.BLUE ? "BLUE" : "RED") : "N/A";
+        telemetry.addData("D-Pad Up", "Alliance: " + allianceDisplay);
         telemetry.addData("A/Cross", "Limelight: " + (limelightEnabled ? "ON" : "OFF"));
         telemetry.addData("B/Circle", "Auto-Cal: " + (autoCalibrationEnabled ? "ON" : "OFF"));
         telemetry.addData("X/Square", "Manual Recalibrate");

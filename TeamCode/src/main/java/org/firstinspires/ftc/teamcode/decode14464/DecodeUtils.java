@@ -98,7 +98,8 @@ public class DecodeUtils {
 
         // Get horizontal offset (tx) from Limelight
         // tx is in degrees - positive means target is to the right of center
-        double tx = limelightManager.getTargetX();
+        // Use unfiltered since we already did our own tag check above
+        double tx = limelightManager.getTargetXUnfiltered();
 
         // Error is how far off we are (want tx to be 0)
         double error = tx;
@@ -265,7 +266,64 @@ public class DecodeUtils {
         );
     }
 
-    // Add more utility methods as needed
+    /**
+     * Auto-track turret using ALLIANCE-BASED tag filtering
+     * Automatically uses the correct tag (20 for BLUE, 24 for RED) based on
+     * the alliance set in LimelightManager.
+     *
+     * @param limelightManager LimelightManager instance (must have alliance set)
+     * @param pidState PID state object
+     * @return TurretTrackingResult with calculated motor power
+     */
+    public static TurretTrackingResult autoTrackTurretAlliance(
+            LimelightManager limelightManager,
+            TurretPIDState pidState) {
+        
+        // Check if Limelight is connected
+        if (!limelightManager.isConnected()) {
+            pidState.reset();
+            return new TurretTrackingResult(0.0, false, false, 0.0, 0.0, false);
+        }
+
+        // Check if ALLIANCE tag is visible (uses cached data - efficient)
+        if (!limelightManager.hasAllianceTarget()) {
+            pidState.reset();
+            return new TurretTrackingResult(0.0, false, false, 0.0, 0.0, false);
+        }
+
+        // Get horizontal offset (tx) - alliance filtered
+        double tx = limelightManager.getTargetX();
+        double error = tx;
+
+        // Check if we're within deadband (locked on)
+        if (Math.abs(error) < TurretConstants.DEADBAND) {
+            pidState.reset();
+            return new TurretTrackingResult(0.0, true, true, error, tx, false);
+        }
+
+        // PID calculations
+        pidState.integral += error;
+        double derivative = error - pidState.previousError;
+
+        double power = (TurretConstants.AUTO_TRACK_KP * error) +
+                      (TurretConstants.AUTO_TRACK_KI * pidState.integral) +
+                      (TurretConstants.AUTO_TRACK_KD * derivative);
+
+        if (TurretConstants.INVERT_TURRET_DIRECTION) {
+            power = -power;
+        }
+
+        power = Math.max(-TurretConstants.MAX_TURRET_POWER, 
+                        Math.min(TurretConstants.MAX_TURRET_POWER, power));
+
+        if (Math.abs(power) < TurretConstants.MIN_TURRET_POWER && Math.abs(error) > TurretConstants.DEADBAND) {
+            power = Math.signum(power) * TurretConstants.MIN_TURRET_POWER;
+        }
+
+        pidState.previousError = error;
+
+        return new TurretTrackingResult(power, true, false, error, tx, false);
+    }
 }
 
 

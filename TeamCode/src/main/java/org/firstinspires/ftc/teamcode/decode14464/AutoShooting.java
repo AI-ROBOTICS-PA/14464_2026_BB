@@ -25,9 +25,10 @@ public class AutoShooting extends OpMode {
     private TelemetryManager telemetryM;
 
     // ========== APRILTAG CONFIGURATION ==========
-    // AprilTag IDs for goal detection (from DECODE_Printable_AT_USLetter - V1)
-    public static int PRIMARY_GOAL_TAG_ID = 20;   // Primary basket AprilTag
-    public static int SECONDARY_GOAL_TAG_ID = 24; // Secondary basket AprilTag
+    // AprilTag IDs are managed by LimelightManager alliance system:
+    // - BLUE Alliance: Tag ID 20
+    // - RED Alliance: Tag ID 24
+    // Use limelightManager.toggleAlliance() to switch, getTargetTagId() to get current
 
     // ========== GOAL CONFIGURATION ==========
     // Dynamic goal position (updated from AprilTag detection)
@@ -45,7 +46,6 @@ public class AutoShooting extends OpMode {
     // Goal selection
     private boolean useAprilTagDetection = true;
     private boolean aprilTagDetected = false;
-    private int currentTargetTagID = PRIMARY_GOAL_TAG_ID;
 
     // ========== SHOOTER TUNING PARAMETERS ==========
     // These define the trajectory pass-through point
@@ -121,7 +121,8 @@ public class AutoShooting extends OpMode {
         telemetry.addLine("  D-Pad Left - Toggle AprilTag mode");
         telemetry.addLine("=================================");
         telemetry.addData("Limelight", limelightManager.isConnected() ? "Connected" : "NOT FOUND");
-        telemetry.addData("Target Tag ID", currentTargetTagID);
+        String alliance = limelightManager.getAlliance() == LimelightManager.Alliance.BLUE ? "BLUE" : "RED";
+        telemetry.addData("Alliance", alliance + " (Tag " + limelightManager.getTargetTagId() + ")");
         telemetry.update();
     }
 
@@ -155,14 +156,10 @@ public class AutoShooting extends OpMode {
             aprilTagDetected = false;
         }
 
-        // ========== GOAL TAG SWITCHING ==========
-        // Triangle button to switch between primary and secondary goal tags
+        // ========== ALLIANCE SWITCHING ==========
+        // Triangle button to toggle between BLUE (Tag 20) and RED (Tag 24) alliance
         if (gamepad1.triangle && !prevTrianglePressed) {
-            if (currentTargetTagID == PRIMARY_GOAL_TAG_ID) {
-                currentTargetTagID = SECONDARY_GOAL_TAG_ID;
-            } else {
-                currentTargetTagID = PRIMARY_GOAL_TAG_ID;
-            }
+            limelightManager.toggleAlliance();
         }
         prevTrianglePressed = gamepad1.triangle;
 
@@ -296,7 +293,8 @@ public class AutoShooting extends OpMode {
         telemetry.addData("Shooter Active", isShooterActive);
         telemetry.addLine("---------------------------------");
         telemetry.addData("AprilTag Mode", useAprilTagDetection ? "ENABLED" : "Manual");
-        telemetry.addData("Target Tag ID", currentTargetTagID);
+        String alliance = limelightManager.getAlliance() == LimelightManager.Alliance.BLUE ? "BLUE" : "RED";
+        telemetry.addData("Alliance", alliance + " (Tag " + limelightManager.getTargetTagId() + ")");
         telemetry.addData("Tag Detected", aprilTagDetected ? "YES" : "NO");
         telemetry.addData("Limelight", limelightManager.isConnected() ? "Connected" : "Disconnected");
         telemetry.addData("Visible Tags", limelightManager.getVisibleTagCount());
@@ -334,9 +332,9 @@ public class AutoShooting extends OpMode {
         }
 
         // Check if target AprilTag is visible
-        if (limelightManager.isAprilTagVisible(currentTargetTagID)) {
+        if (limelightManager.hasAllianceTarget()) {
             com.qualcomm.hardware.limelightvision.LLResultTypes.FiducialResult targetTag =
-                limelightManager.getAprilTag(currentTargetTagID);
+                limelightManager.getAllianceTag();
 
             if (targetTag != null) {
                 // Get target pose in robot-relative coordinates from Limelight

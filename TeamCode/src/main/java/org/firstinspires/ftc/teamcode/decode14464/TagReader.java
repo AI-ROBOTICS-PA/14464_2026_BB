@@ -149,20 +149,26 @@ public class TagReader extends OpMode {
 
         // Additional Limelight data
         telemetry.addLine();
-        telemetry.addData("tx (Horizontal)", "%.2f°", limelightManager.getTargetX());
-        telemetry.addData("ty (Vertical)", "%.2f°", limelightManager.getTargetY());
-        telemetry.addData("Latency", "%.1f ms", limelightManager.getLatency());
+        telemetry.addData("tx (Horizontal)", "%.2f°", limelightManager.getTargetXUnfiltered());
+        telemetry.addData("ty (Vertical)", "%.2f°", limelightManager.getTargetYUnfiltered());
+        long staleness = limelightManager.getStaleness();
+        telemetry.addData("Data Staleness", staleness >= 0 ? staleness + " ms" : "N/A");
+        telemetry.addData("Data Fresh", limelightManager.isDataFresh() ? "✓ Yes" : "✗ No");
 
         telemetry.addLine();
         telemetry.addLine("=================================");
 
-        // Special check for tags 20 and 24
+        // Alliance info
         telemetry.addLine();
-        telemetry.addLine("LOOKING FOR TAGS 20 & 24:");
-        boolean tag20visible = limelightManager.isAprilTagVisible(20);
-        boolean tag24visible = limelightManager.isAprilTagVisible(24);
-        telemetry.addData("Tag 20", tag20visible ? "✓ VISIBLE" : "✗ Not found");
-        telemetry.addData("Tag 24", tag24visible ? "✓ VISIBLE" : "✗ Not found");
+        String alliance = limelightManager.getAlliance() == LimelightManager.Alliance.BLUE ? "BLUE" : "RED";
+        telemetry.addData("Current Alliance", alliance + " (Target Tag: " + limelightManager.getTargetTagId() + ")");
+        telemetry.addData("Alliance Tag Visible", limelightManager.isAllianceTagVisible() ? "✓ YES" : "✗ No");
+        
+        // Tags 20 and 24 status (efficient - uses cached data)
+        telemetry.addLine();
+        telemetry.addLine("TAG STATUS:");
+        telemetry.addData("Tag 20 (BLUE)", limelightManager.isAprilTagVisible(20) ? "✓ VISIBLE" : "✗ Not found");
+        telemetry.addData("Tag 24 (RED)", limelightManager.isAprilTagVisible(24) ? "✓ VISIBLE" : "✗ Not found");
 
         telemetry.addLine("=================================");
         telemetry.update();

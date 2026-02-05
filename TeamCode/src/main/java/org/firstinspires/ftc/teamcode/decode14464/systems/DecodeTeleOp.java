@@ -3,6 +3,7 @@ package org.firstinspires.ftc.teamcode.decode14464.systems;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import org.firstinspires.ftc.teamcode.decode14464.HoodConstants;
+import org.firstinspires.ftc.teamcode.decode14464.LimelightManager;
 
 /**
  * DECODE TeleOp - Main Competition TeleOp
@@ -23,6 +24,9 @@ import org.firstinspires.ftc.teamcode.decode14464.HoodConstants;
  * - Right Stick X: Rotation
  *
  * GAMEPAD 2 (Operator):
+ * - A/Cross: Toggle Alliance (BLUE=Tag 20, RED=Tag 24) for Limelight targeting
+ * - X/Square: Toggle Auto-Turret tracking ON/OFF
+ * - Y/Triangle: Toggle Auto-Calibration ON/OFF
  * - Left Stick Y: Manual intake control (Up = Intake, Down = Outtake)
  * - Right Stick X: Turret manual override (variable speed)
  * - D-Pad Left/Right: Turret manual override (fine control)
@@ -121,6 +125,7 @@ public class DecodeTeleOp extends OpMode {
     private boolean autoCalibrationEnabled = true; // Can be toggled with GP2 Y button
     private String lastCalibrationStatus = "None"; // For telemetry
     private boolean prevGP2Y = false; // For auto-calibration toggle button
+    private boolean prevGP2A = false; // For alliance toggle button
 
     // ========== RUMBLE FEEDBACK ==========
     private boolean wasReadyToShoot = false; // Track state change for rumble
@@ -396,6 +401,21 @@ public class DecodeTeleOp extends OpMode {
         }
         prevGP2Y = gp2YPressed;
 
+        // ========== GP2: TOGGLE ALLIANCE (A/Cross Button) ==========
+        // Press A (Xbox) or Cross (PS4) to toggle between BLUE and RED alliance
+        // This changes which AprilTag ID is used for calibration (BLUE=20, RED=24)
+        boolean gp2APressed = gamepad2.a || gamepad2.cross; // Support both Xbox and PS4
+        if (gp2APressed && !prevGP2A) {
+            robot.limelight.toggleAlliance();
+            // Long rumble for RED, short rumble for BLUE
+            if (robot.limelight.getAlliance() == LimelightManager.Alliance.RED) {
+                gamepad2.rumble(400); // Long = RED
+            } else {
+                gamepad2.rumble(150); // Short = BLUE
+            }
+        }
+        prevGP2A = gp2APressed;
+
         // ========== AUTOMATIC LIMELIGHT CALIBRATION ==========
         // Auto-calibrate when conditions are good
         if (autoCalibrationEnabled && !turretManualOverride) {
@@ -488,9 +508,11 @@ public class DecodeTeleOp extends OpMode {
             return;
         }
         
-        if (!robot.limelight.hasValidTarget()) {
+        // Only calibrate if our ALLIANCE TAG is visible (not just any tag)
+        if (!robot.limelight.hasAllianceTarget()) {
             if (isManual) {
-                lastCalibrationStatus = "FAILED: No AprilTag";
+                int targetTag = robot.limelight.getTargetTagId();
+                lastCalibrationStatus = "FAILED: Tag " + targetTag + " not visible";
             }
             return;
         }
@@ -541,8 +563,8 @@ public class DecodeTeleOp extends OpMode {
             return; // Still in cooldown
         }
         
-        // Check if Limelight has valid target
-        if (robot.limelight == null || !robot.limelight.hasValidTarget()) {
+        // Check if Limelight has our alliance's tag visible (not just any tag)
+        if (robot.limelight == null || !robot.limelight.hasAllianceTarget()) {
             return;
         }
         
@@ -640,10 +662,14 @@ public class DecodeTeleOp extends OpMode {
         telemetry.addData("Distance", "%.0f in", robot.localization.getDistanceToPoint(
             RobotConstants.Field.GOAL_X, RobotConstants.Field.GOAL_Y));
 
-        // Limelight AprilTag (simple status)
+        // Alliance and AprilTag (simple status)
         if (robot.limelight != null && robot.limelight.isConnected()) {
-            telemetry.addData("AprilTag", robot.limelight.hasValidTarget() ? 
-                "✓ tx=" + String.format("%.1f°", robot.limelight.getTargetX()) : "✗ None");
+            String allianceStr = robot.limelight.getAlliance() == LimelightManager.Alliance.BLUE ? "BLUE" : "RED";
+            int targetTag = robot.limelight.getTargetTagId();
+            boolean tagVisible = robot.limelight.hasAllianceTarget();
+            telemetry.addData("Alliance", "%s (Tag %d)", allianceStr, targetTag);
+            telemetry.addData("AprilTag", tagVisible ? 
+                "✓ tx=" + String.format("%.1f°", robot.limelight.getTargetX()) : "✗ Tag " + targetTag + " not visible");
         }
 
         // Feature Toggles (compact)
@@ -681,12 +707,20 @@ public class DecodeTeleOp extends OpMode {
         telemetry.addLine("─── LIMELIGHT ───");
         if (robot.limelight != null && robot.limelight.isConnected()) {
             telemetry.addData("Status", "✓ Connected");
-            if (robot.limelight.hasValidTarget()) {
+            // Show alliance and target tag
+            String allianceStr = robot.limelight.getAlliance() == LimelightManager.Alliance.BLUE ? "BLUE" : "RED";
+            telemetry.addData("Alliance", "%s (Target: Tag %d)", allianceStr, robot.limelight.getTargetTagId());
+            // Show all visible tags (with * marking our target)
+            telemetry.addData("Tags Seen", robot.limelight.getVisibleTagIdsString());
+            // Show tx/ty if our alliance tag is visible
+            if (robot.limelight.hasAllianceTarget()) {
                 telemetry.addData("tx/ty", "%.1f° / %.1f°", 
                     robot.limelight.getTargetX(), robot.limelight.getTargetY());
-                telemetry.addData("Tags", robot.limelight.getVisibleTagCount());
+            } else if (robot.limelight.hasValidTarget()) {
+                telemetry.addData("tx/ty", "%.1f° / %.1f° (other tag)", 
+                    robot.limelight.getTargetX(), robot.limelight.getTargetY());
             } else {
-                telemetry.addData("Target", "✗ No AprilTag");
+                telemetry.addData("Target", "✗ No AprilTag visible");
             }
             telemetry.addData("Last Cal", lastCalibrationStatus);
         } else {
@@ -715,6 +749,9 @@ public class DecodeTeleOp extends OpMode {
 
         telemetry.addLine();
         telemetry.addLine("─── GP2 (OPERATOR) ───");
+        String allianceStr = robot.limelight != null ? 
+            (robot.limelight.getAlliance() == LimelightManager.Alliance.BLUE ? "BLUE" : "RED") : "N/A";
+        telemetry.addData("A/×", "Alliance: " + allianceStr);
         telemetry.addData("X/□", autoTurretEnabled ? "Turret: ON" : "Turret: OFF");
         telemetry.addData("Y/△", autoCalibrationEnabled ? "AutoCal: ON" : "AutoCal: OFF");
         telemetry.addData("L Stick Y", "Intake Control");
