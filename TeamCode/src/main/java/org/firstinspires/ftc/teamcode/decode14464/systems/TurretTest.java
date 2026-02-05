@@ -29,12 +29,14 @@ import org.firstinspires.ftc.teamcode.decode14464.LimelightManager;
  *   D-Pad Left    - Manual Mode (disable auto-turret)
  *
  * GAMEPAD 2 (Testing Features - All Toggleable):
- *   A Button      - Toggle LIMELIGHT on/off
- *   B Button      - Toggle AUTO-CALIBRATION on/off
- *   X Button      - MANUAL CALIBRATION (one-shot recalibrate turret position)
- *   Y Button      - LIMELIGHT CALIBRATION (one-shot AprilTag calibration)
+ *   A/Cross       - Toggle LIMELIGHT on/off
+ *   B/Circle      - Toggle AUTO-CALIBRATION on/off
+ *   X/Square      - MANUAL CALIBRATION (one-shot recalibrate turret position)
+ *   Y/Triangle    - LIMELIGHT CALIBRATION (one-shot AprilTag calibration)
  *   Left Bumper   - Reset localization to (0,0,0)
  *   Right Bumper  - Reset turret encoder to 0
+ *
+ * Supports both Xbox and PS4 controllers!
  */
 @TeleOp(name = "Turret Test", group = "Test")
 public class TurretTest extends OpMode {
@@ -219,33 +221,37 @@ public class TurretTest extends OpMode {
         );
 
         // ========== GP2: FEATURE TOGGLES ==========
-        // A Button: Toggle Limelight on/off
-        if (gamepad2.a && !prevGP2A) {
+        // A/Cross Button: Toggle Limelight on/off
+        boolean gp2APressed = gamepad2.a || gamepad2.cross; // Support both Xbox and PS4
+        if (gp2APressed && !prevGP2A) {
             limelightEnabled = !limelightEnabled;
             gamepad2.rumble(limelightEnabled ? 200 : 100);
             telemetry.log().add(limelightEnabled ? "📷 Limelight ENABLED" : "📷 Limelight DISABLED");
         }
-        prevGP2A = gamepad2.a;
+        prevGP2A = gp2APressed;
 
-        // B Button: Toggle Auto-Calibration on/off
-        if (gamepad2.b && !prevGP2B) {
+        // B/Circle Button: Toggle Auto-Calibration on/off
+        boolean gp2BPressed = gamepad2.b || gamepad2.circle; // Support both Xbox and PS4
+        if (gp2BPressed && !prevGP2B) {
             autoCalibrationEnabled = !autoCalibrationEnabled;
             gamepad2.rumble(autoCalibrationEnabled ? 200 : 100);
             telemetry.log().add(autoCalibrationEnabled ? "🔄 Auto-Calibration ENABLED" : "🔄 Auto-Calibration DISABLED");
         }
-        prevGP2B = gamepad2.b;
+        prevGP2B = gp2BPressed;
 
-        // X Button: Manual Recalibrate (one-shot)
-        if (gamepad2.x && !prevGP2X) {
+        // X/Square Button: Manual Recalibrate (one-shot)
+        boolean gp2XPressed = gamepad2.x || gamepad2.square; // Support both Xbox and PS4
+        if (gp2XPressed && !prevGP2X) {
             performManualRecalibration();
         }
-        prevGP2X = gamepad2.x;
+        prevGP2X = gp2XPressed;
 
-        // Y Button: Limelight Calibration (one-shot)
-        if (gamepad2.y && !prevGP2Y) {
+        // Y/Triangle Button: Limelight Calibration (one-shot)
+        boolean gp2YPressed = gamepad2.y || gamepad2.triangle; // Support both Xbox and PS4
+        if (gp2YPressed && !prevGP2Y) {
             performLimelightCalibration(true);
         }
-        prevGP2Y = gamepad2.y;
+        prevGP2Y = gp2YPressed;
 
         // Left Bumper: Reset localization to (0, 0, 0)
         if (gamepad2.left_bumper && !prevGP2LeftBumper) {
@@ -947,10 +953,10 @@ public class TurretTest extends OpMode {
 
         telemetry.addLine();
         telemetry.addLine("====== GP2 CONTROLS ======");
-        telemetry.addData("A", "Limelight: " + (limelightEnabled ? "ON" : "OFF"));
-        telemetry.addData("B", "Auto-Cal: " + (autoCalibrationEnabled ? "ON" : "OFF"));
-        telemetry.addData("X", "Manual Recalibrate");
-        telemetry.addData("Y", "Limelight Calibrate");
+        telemetry.addData("A/Cross", "Limelight: " + (limelightEnabled ? "ON" : "OFF"));
+        telemetry.addData("B/Circle", "Auto-Cal: " + (autoCalibrationEnabled ? "ON" : "OFF"));
+        telemetry.addData("X/Square", "Manual Recalibrate");
+        telemetry.addData("Y/Triangle", "Limelight Calibrate");
         telemetry.addData("LB", "Reset Localization");
         telemetry.addData("RB", "Reset Turret Encoder");
 

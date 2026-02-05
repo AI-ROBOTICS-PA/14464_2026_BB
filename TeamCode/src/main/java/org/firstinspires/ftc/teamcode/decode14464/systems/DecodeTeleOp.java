@@ -85,13 +85,12 @@ public class DecodeTeleOp extends OpMode {
     private boolean prevDpadRight = false;
     private boolean prevDpadUp = false;
     private boolean prevDpadDown = false;
-    private boolean prevLeftTrigger = false;
 
     // ========== SHOOTER VELOCITY SETTINGS ==========
-    private static final double SHOOTER_HIGH_VELOCITY = 1450; // Long distance
-    private static final double SHOOTER_LOW_VELOCITY = 1100;  // Short distance
-    private double currentShooterVelocity = SHOOTER_HIGH_VELOCITY;
-    private boolean isHighVelocityMode = true;
+    private static final double SHOOTER_HIGH_VELOCITY = 1450; // Long distance (hold trigger)
+    private static final double SHOOTER_LOW_VELOCITY = 1100;  // Short distance (default)
+    private double currentShooterVelocity = SHOOTER_LOW_VELOCITY; // Start at LOW
+    private boolean isHighVelocityMode = false; // Start at LOW
 
     // ========== HOOD PRESET POSITIONS ==========
     // 3 preset positions: LONG (flat), MEDIUM, SHORT (angled up)
@@ -125,6 +124,11 @@ public class DecodeTeleOp extends OpMode {
 
     // ========== RUMBLE FEEDBACK ==========
     private boolean wasReadyToShoot = false; // Track state change for rumble
+
+    // ========== TELEMETRY PAGES ==========
+    private int telemetryPage = 0; // 0=Essential, 1=Details, 2=Controls
+    private static final int TELEMETRY_PAGE_COUNT = 3;
+    private boolean prevGP2Back = false;
 
     @Override
     public void init() {
@@ -298,10 +302,10 @@ public class DecodeTeleOp extends OpMode {
         }
         prevGP2DpadDown = gamepad2.dpad_down;
 
-        // ========== GP2: TOGGLE AUTO-TURRET (X Button) ==========
-        // Press X to toggle auto-turret tracking on/off
+        // ========== GP2: TOGGLE AUTO-TURRET (X/Square Button) ==========
+        // Press X (Xbox) or Square (PS4) to toggle auto-turret tracking on/off
         // Starts DISABLED - test in TurretTest first, then enable here
-        boolean gp2XPressed = gamepad2.x;
+        boolean gp2XPressed = gamepad2.x || gamepad2.square; // Support both Xbox and PS4
         if (gp2XPressed && !prevGP2X) {
             autoTurretEnabled = !autoTurretEnabled;
             if (autoTurretEnabled) {
@@ -382,9 +386,9 @@ public class DecodeTeleOp extends OpMode {
         }
         prevGP2RightBumper = gp2RightBumperPressed;
 
-        // ========== GP2: TOGGLE AUTO-CALIBRATION (Y Button) ==========
-        // Press Y to toggle automatic Limelight calibration on/off
-        boolean gp2YPressed = gamepad2.y;
+        // ========== GP2: TOGGLE AUTO-CALIBRATION (Y/Triangle Button) ==========
+        // Press Y (Xbox) or Triangle (PS4) to toggle automatic Limelight calibration on/off
+        boolean gp2YPressed = gamepad2.y || gamepad2.triangle; // Support both Xbox and PS4
         if (gp2YPressed && !prevGP2Y) {
             autoCalibrationEnabled = !autoCalibrationEnabled;
             // Rumble feedback for toggle
@@ -398,28 +402,29 @@ public class DecodeTeleOp extends OpMode {
             performAutoCalibration();
         }
 
-        // ========== EMERGENCY STOP (Back + Start) ==========
-        // Press Back + Start together to immediately stop all motors
-        if ((gamepad1.back && gamepad1.start) || (gamepad2.back && gamepad2.start)) {
+        // ========== EMERGENCY STOP (Back/Share + Start/Options) ==========
+        // Press Back+Start (Xbox) or Share+Options (PS4) together to immediately stop all motors
+        boolean gp1Emergency = (gamepad1.back || gamepad1.share) && (gamepad1.start || gamepad1.options);
+        boolean gp2Emergency = (gamepad2.back || gamepad2.share) && (gamepad2.start || gamepad2.options);
+        if (gp1Emergency || gp2Emergency) {
             robot.stopAll();
             gamepad1.rumble(500);
             gamepad2.rumble(500);
             telemetry.addLine("⚠️ EMERGENCY STOP ACTIVATED!");
         }
 
-        // ========== SHOOTER VELOCITY TOGGLE (Left Trigger) ==========
-        // Press left trigger (>0.5) to toggle between HIGH and LOW velocity
-        boolean leftTriggerPressed = gamepad1.left_trigger > 0.5;
-        if (leftTriggerPressed && !prevLeftTrigger) {
-            isHighVelocityMode = !isHighVelocityMode;
-            currentShooterVelocity = isHighVelocityMode ? SHOOTER_HIGH_VELOCITY : SHOOTER_LOW_VELOCITY;
-            
-            // Update shooter velocity immediately
+        // ========== SHOOTER VELOCITY (Left Trigger = HIGH) ==========
+        // Default: LOW velocity | Hold Left Trigger: HIGH velocity
+        // Momentary - releases back to LOW when trigger released
+        boolean leftTriggerHeld = gamepad1.left_trigger > 0.5;
+        double targetVelocity = leftTriggerHeld ? SHOOTER_HIGH_VELOCITY : SHOOTER_LOW_VELOCITY;
+        
+        // Only update if velocity changed (avoid spamming motor commands)
+        if (targetVelocity != currentShooterVelocity) {
+            currentShooterVelocity = targetVelocity;
+            isHighVelocityMode = leftTriggerHeld;
             robot.shooting.startShooter(currentShooterVelocity);
-            
-            telemetry.addLine(isHighVelocityMode ? "🚀 Velocity: HIGH (long range)" : "🎯 Velocity: LOW (short range)");
         }
-        prevLeftTrigger = leftTriggerPressed;
 
         // ========== MANUAL BALL LAUNCH (Right Trigger) ==========
         // Right Trigger: Manual ball push servo control (only in launch mode AND when auto-shoot is NOT active)
@@ -559,122 +564,170 @@ public class DecodeTeleOp extends OpMode {
     }
 
     private void updateTelemetry() {
-        // ===== MODE STATUS =====
-        telemetry.addLine("========== MODE ==========");
+        // ========== PAGE SWITCHING (GP2 Back/Share Button) ==========
+        boolean gp2BackPressed = gamepad2.back || gamepad2.share; // Support both Xbox and PS4
+        boolean gp2StartPressed = gamepad2.start || gamepad2.options;
+        if (gp2BackPressed && !prevGP2Back && !gp2StartPressed) { // Avoid conflict with emergency stop
+            telemetryPage = (telemetryPage + 1) % TELEMETRY_PAGE_COUNT;
+            gamepad2.rumble(50);
+        }
+        prevGP2Back = gp2BackPressed;
+
+        // ========== HEADER (Always shown) ==========
+        String[] pageNames = {"ESSENTIAL", "DETAILS", "CONTROLS"};
+        telemetry.addLine("═══ PAGE " + (telemetryPage + 1) + "/" + TELEMETRY_PAGE_COUNT + ": " + pageNames[telemetryPage] + " ═══");
+        telemetry.addLine("(GP2 Back = Next Page)");
+        telemetry.addLine();
+
+        // ========== ALWAYS SHOW: Mode + Ready Status ==========
         String modeText = robot.autoIntake.isIntakeMode() ? "🔵 INTAKE" : "🔴 LAUNCH";
-        telemetry.addData("Current Mode", modeText);
-        telemetry.addData("Turret Slot", robot.autoIntake.getCurrentIndex());
-        // Show intake motor status with GP2 override info
-        double gp2IntakeInput = -gamepad2.left_stick_y;
-        String intakeStatus;
-        if (Math.abs(gp2IntakeInput) > 0.1) {
-            intakeStatus = gp2IntakeInput > 0 ? "🎮 GP2 INTAKE" : "🎮 GP2 OUTTAKE";
-        } else {
-            intakeStatus = robot.autoIntake.isIntakeMode() ? "✓ RUNNING" : "✗ OFF";
-        }
-        telemetry.addData("Intake Motor", intakeStatus);
+        String readyText = robot.isReadyToShoot() ? "✓ READY" : "⏳ NOT READY";
+        telemetry.addData("Mode", modeText + " | " + readyText);
 
-        // ===== AUTO-INTAKE STATUS =====
-        if (robot.autoIntake.isIntakeMode()) {
-            telemetry.addLine();
-            telemetry.addLine("===== AUTO-INTAKE =====");
-            telemetry.addData("Ball Detected", robot.autoIntake.isBallDetected() ? "✓ YES" : "✗ NO");
-            telemetry.addData("Color", robot.autoIntake.getDetectedColor());
+        // ========== PAGE CONTENT ==========
+        switch (telemetryPage) {
+            case 0: // ESSENTIAL - Most important info during match
+                displayEssentialPage();
+                break;
+            case 1: // DETAILS - Detailed system info
+                displayDetailsPage();
+                break;
+            case 2: // CONTROLS - Quick reference
+                displayControlsPage();
+                break;
         }
 
-        // ===== AUTO-SHOOT STATUS =====
+        telemetry.update();
+    }
+
+    /**
+     * Page 0: Essential info - what drivers need during match
+     */
+    private void displayEssentialPage() {
+        // Turret Slot
+        telemetry.addData("Balls Loaded", robot.autoIntake.getCurrentIndex() + 1);
+
+        // Auto-Shoot Status (only if active)
         if (robot.autoShoot.isInProgress()) {
             telemetry.addLine();
-            telemetry.addLine("===== AUTO-SHOOT =====");
-            telemetry.addData("Status", "🎯 SHOOTING!");
-            telemetry.addData("Balls Shot", robot.autoShoot.getBallsShot() + "/" + robot.autoShoot.getBallsToShoot());
-            telemetry.addData("State", robot.autoShoot.getCurrentState());
+            telemetry.addLine("🎯 AUTO-SHOOTING!");
+            telemetry.addData("Progress", robot.autoShoot.getBallsShot() + "/" + robot.autoShoot.getBallsToShoot());
         }
 
-        // ===== SHOOTER STATUS =====
+        // Shooter
         telemetry.addLine();
-        telemetry.addLine("====== SHOOTER ======");
-        telemetry.addData("Mode", isHighVelocityMode ? "🚀 HIGH" : "🎯 LOW");
-        telemetry.addData("Velocity", "%.0f / %.0f", robot.motors.getShooterVelocity(), currentShooterVelocity);
-        telemetry.addData("Ready", robot.shooting.isShooterAtTargetVelocity() ? "✓ YES" : "⏳ Spinning Up");
-        telemetry.addData("Distance to Goal", "%.1f in", robot.localization.getDistanceToPoint(
-            RobotConstants.Field.GOAL_X,
-            RobotConstants.Field.GOAL_Y));
+        telemetry.addData("Shooter", "%.0f/%.0f %s", 
+            robot.motors.getShooterVelocity(), 
+            currentShooterVelocity,
+            robot.shooting.isShooterAtTargetVelocity() ? "✓" : "⏳");
 
-        // ===== HOOD STATUS =====
-        telemetry.addLine();
-        telemetry.addLine("======= HOOD =======");
-        if (isHoodCustomPosition) {
-            telemetry.addData("Mode", "🔧 CUSTOM (GP2)");
+        // Turret
+        String turretStatus;
+        if (!autoTurretEnabled) {
+            turretStatus = "MANUAL";
+        } else if (turretManualOverride) {
+            turretStatus = "OVERRIDE";
         } else {
-            telemetry.addData("Mode", "📌 " + HOOD_POSITION_NAMES[currentHoodIndex]);
+            turretStatus = robot.autoTurret.isOnTarget() ? "ON TARGET" : "Tracking...";
         }
-        telemetry.addData("Position", "%.2f", currentHoodPosition);
-        telemetry.addData("Range", String.format("%.2f - %.2f", HoodConstants.HOOD_MIN_POSITION, HoodConstants.HOOD_MAX_POSITION));
+        telemetry.addData("Turret", "%.0f° %s", robot.autoTurret.getTurretAngle(), turretStatus);
 
-        // ===== TURRET MOTOR STATUS =====
-        telemetry.addLine();
-        telemetry.addLine("===== AUTO-TURRET =====");
-        telemetry.addData("Feature", autoTurretEnabled ? "✓ ENABLED" : "✗ DISABLED (GP2 X to enable)");
-        if (autoTurretEnabled) {
-            telemetry.addData("Mode", turretManualOverride ? "🎮 MANUAL OVERRIDE" : "🎯 AUTO-TRACKING");
-            telemetry.addData("Status", robot.autoTurret.isOnTarget() ? "✓ ON TARGET" : "⏳ Adjusting");
-        } else {
-            telemetry.addData("Mode", "🎮 MANUAL ONLY");
-        }
-        telemetry.addData("Turret Angle", "%.1f°", robot.autoTurret.getTurretAngle());
+        // Hood
+        String hoodMode = isHoodCustomPosition ? "CUSTOM" : HOOD_POSITION_NAMES[currentHoodIndex];
+        telemetry.addData("Hood", "%.2f (%s)", currentHoodPosition, hoodMode);
 
-        // ===== LIMELIGHT STATUS =====
-        telemetry.addLine();
-        telemetry.addLine("===== LIMELIGHT =====");
+        // Distance
+        telemetry.addData("Distance", "%.0f in", robot.localization.getDistanceToPoint(
+            RobotConstants.Field.GOAL_X, RobotConstants.Field.GOAL_Y));
+
+        // Limelight AprilTag (simple status)
         if (robot.limelight != null && robot.limelight.isConnected()) {
-            telemetry.addData("Camera", "✓ Connected");
-            if (robot.limelight.hasValidTarget()) {
-                telemetry.addData("AprilTag", "✓ VISIBLE");
-                telemetry.addData("tx (offset)", "%.1f°", robot.limelight.getTargetX());
-                telemetry.addData("Tags Seen", robot.limelight.getVisibleTagCount());
-            } else {
-                telemetry.addData("AprilTag", "✗ Not visible");
-            }
-            telemetry.addData("Last Calibration", lastCalibrationStatus);
-            telemetry.addData("Auto-Calibrate", autoCalibrationEnabled ? "✓ ON" : "✗ OFF");
-        } else {
-            telemetry.addData("Camera", "✗ Not connected");
+            telemetry.addData("AprilTag", robot.limelight.hasValidTarget() ? 
+                "✓ tx=" + String.format("%.1f°", robot.limelight.getTargetX()) : "✗ None");
         }
 
-        // ===== POSITION INFO =====
+        // Feature Toggles (compact)
         telemetry.addLine();
-        telemetry.addLine("====== POSITION ======");
+        telemetry.addData("Features", 
+            (autoTurretEnabled ? "Turret:ON" : "Turret:OFF") + " | " +
+            (autoCalibrationEnabled ? "AutoCal:ON" : "AutoCal:OFF"));
+    }
+
+    /**
+     * Page 1: Detailed system information
+     */
+    private void displayDetailsPage() {
+        // Position
+        telemetry.addLine("─── POSITION ───");
         telemetry.addData("X, Y", "%.1f, %.1f", robot.localization.getX(), robot.localization.getY());
         telemetry.addData("Heading", "%.1f°", robot.localization.getHeadingDegrees());
 
-        // ===== CONTROLS REMINDER =====
+        // Intake details
         telemetry.addLine();
-        telemetry.addLine("=== GP1 CONTROLS ===");
-        telemetry.addData("A/Cross", "Toggle Mode");
-        telemetry.addData("Right Bumper", "Auto-Shoot");
-        telemetry.addData("D-Pad L/R", "Manual Turret");
-        telemetry.addData("D-Pad U/D", "Hood Preset");
-        telemetry.addData("Left Trigger", "Toggle Velocity");
-        telemetry.addData("Right Trigger", robot.autoIntake.isIntakeMode() ? "Disabled" :
-            String.format("Manual Push (%.0f%%)", gamepad1.right_trigger * 100));
-        
-        telemetry.addLine();
-        telemetry.addLine("=== GP2 CONTROLS ===");
-        telemetry.addData("X Button", autoTurretEnabled ? "Auto-Turret: ON" : "Auto-Turret: OFF");
-        telemetry.addData("Y Button", autoCalibrationEnabled ? "Auto-Cal: ON" : "Auto-Cal: OFF");
-        telemetry.addData("Left Stick Y", String.format("Intake (%.0f%%)", Math.abs(gp2IntakeInput) * 100));
-        telemetry.addData("Right Stick X", "Turret Manual");
-        telemetry.addData("D-Pad L/R", "Turret Fine Control");
-        telemetry.addData("D-Pad U/D", "Hood Fine (+/- " + HOOD_INCREMENT + ")");
-        telemetry.addData("Left Bumper", "Manual Recalibrate");
-        telemetry.addData("Right Bumper", "Limelight Calibrate");
-        
-        telemetry.addLine();
-        telemetry.addLine("=== EMERGENCY ===");
-        telemetry.addData("Back + Start", "STOP ALL");
+        telemetry.addLine("─── INTAKE ───");
+        double gp2IntakeInput = -gamepad2.left_stick_y;
+        if (Math.abs(gp2IntakeInput) > 0.1) {
+            telemetry.addData("Motor", gp2IntakeInput > 0 ? "GP2 INTAKE" : "GP2 OUTTAKE");
+        } else {
+            telemetry.addData("Motor", robot.autoIntake.isIntakeMode() ? "RUNNING" : "OFF");
+        }
+        if (robot.autoIntake.isIntakeMode()) {
+            telemetry.addData("Ball", robot.autoIntake.isBallDetected() ? 
+                "✓ " + robot.autoIntake.getDetectedColor() : "✗ None");
+        }
 
-        telemetry.update();
+        // Limelight details
+        telemetry.addLine();
+        telemetry.addLine("─── LIMELIGHT ───");
+        if (robot.limelight != null && robot.limelight.isConnected()) {
+            telemetry.addData("Status", "✓ Connected");
+            if (robot.limelight.hasValidTarget()) {
+                telemetry.addData("tx/ty", "%.1f° / %.1f°", 
+                    robot.limelight.getTargetX(), robot.limelight.getTargetY());
+                telemetry.addData("Tags", robot.limelight.getVisibleTagCount());
+            } else {
+                telemetry.addData("Target", "✗ No AprilTag");
+            }
+            telemetry.addData("Last Cal", lastCalibrationStatus);
+        } else {
+            telemetry.addData("Status", "✗ Not connected");
+        }
+
+        // Hood details
+        telemetry.addLine();
+        telemetry.addLine("─── HOOD ───");
+        telemetry.addData("Position", "%.2f", currentHoodPosition);
+        telemetry.addData("Range", "%.2f - %.2f", HoodConstants.HOOD_MIN_POSITION, HoodConstants.HOOD_MAX_POSITION);
+    }
+
+    /**
+     * Page 2: Controls quick reference
+     * Shows both Xbox and PS4 button names
+     */
+    private void displayControlsPage() {
+        telemetry.addLine("─── GP1 (DRIVER) ───");
+        telemetry.addData("A/Cross", "Toggle Mode");
+        telemetry.addData("R Bumper", "Auto-Shoot");
+        telemetry.addData("D-Pad U/D", "Hood Preset");
+        telemetry.addData("D-Pad L/R", "Manual Turret");
+        telemetry.addData("L Trigger", "Hold = HIGH Velocity");
+        telemetry.addData("R Trigger", "Manual Push");
+
+        telemetry.addLine();
+        telemetry.addLine("─── GP2 (OPERATOR) ───");
+        telemetry.addData("X/□", autoTurretEnabled ? "Turret: ON" : "Turret: OFF");
+        telemetry.addData("Y/△", autoCalibrationEnabled ? "AutoCal: ON" : "AutoCal: OFF");
+        telemetry.addData("L Stick Y", "Intake Control");
+        telemetry.addData("R Stick X", "Turret Manual");
+        telemetry.addData("D-Pad U/D", "Hood Fine");
+        telemetry.addData("D-Pad L/R", "Turret Fine");
+        telemetry.addData("L Bumper", "Recalibrate");
+        telemetry.addData("R Bumper", "Limelight Cal");
+        telemetry.addData("Back/Share", "Next Page");
+
+        telemetry.addLine();
+        telemetry.addLine("─── EMERGENCY ───");
+        telemetry.addData("Back+Start", "STOP ALL (both controllers)");
     }
 
     @Override
