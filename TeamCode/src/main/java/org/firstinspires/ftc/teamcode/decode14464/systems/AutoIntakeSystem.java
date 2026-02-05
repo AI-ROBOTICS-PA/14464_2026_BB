@@ -75,7 +75,9 @@ public class AutoIntakeSystem {
     public void setIntakeMode() {
         isIntakeMode = true;
         currentIndex = 0; // Always start at first slot
-        servos.turret_1.setPosition(RobotConstants.TurretServo.INTAKE_POSITIONS[currentIndex]);
+        if (servos != null && servos.turret_1 != null) {
+            servos.turret_1.setPosition(RobotConstants.TurretServo.INTAKE_POSITIONS[currentIndex]);
+        }
 
         // Reset color tracking
         previousColor = RobotConstants.ColorSensor.NO_BALL_COLOR_1;
@@ -88,10 +90,12 @@ public class AutoIntakeSystem {
     public void setLaunchMode() {
         isIntakeMode = false;
 
-        // Find closest launch position to current position
-        double currentPos = servos.turret_1.getPosition();
-        currentIndex = findClosestIndex(currentPos, RobotConstants.TurretServo.LAUNCH_POSITIONS);
-        servos.turret_1.setPosition(RobotConstants.TurretServo.LAUNCH_POSITIONS[currentIndex]);
+        if (servos != null && servos.turret_1 != null) {
+            // Find closest launch position to current position
+            double currentPos = servos.turret_1.getPosition();
+            currentIndex = findClosestIndex(currentPos, RobotConstants.TurretServo.LAUNCH_POSITIONS);
+            servos.turret_1.setPosition(RobotConstants.TurretServo.LAUNCH_POSITIONS[currentIndex]);
+        }
 
         // Reset color tracking
         previousColor = RobotConstants.ColorSensor.NO_BALL_COLOR_1;
@@ -113,6 +117,8 @@ public class AutoIntakeSystem {
      * Advance to next slot (manual control)
      */
     public void advanceToNextSlot() {
+        if (servos == null || servos.turret_1 == null) return;
+        
         if (isIntakeMode) {
             if (currentIndex < RobotConstants.TurretServo.INTAKE_POSITIONS.length - 1) {
                 currentIndex++;
@@ -130,6 +136,8 @@ public class AutoIntakeSystem {
      * Move to previous slot (manual control)
      */
     public void moveToPreviousSlot() {
+        if (servos == null || servos.turret_1 == null) return;
+        
         if (currentIndex > 0) {
             currentIndex--;
             if (isIntakeMode) {
@@ -210,7 +218,7 @@ public class AutoIntakeSystem {
      * Call this before starting auto-shoot to ensure we start from position 0
      */
     public void resetToFirstLaunchPosition() {
-        if (!isIntakeMode) {
+        if (!isIntakeMode && servos != null && servos.turret_1 != null) {
             currentIndex = 0;
             servos.turret_1.setPosition(RobotConstants.TurretServo.LAUNCH_POSITIONS[0]);
         }

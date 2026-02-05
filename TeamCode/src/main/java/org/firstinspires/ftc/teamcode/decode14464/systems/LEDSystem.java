@@ -67,4 +67,26 @@ public class LEDSystem {
     public boolean isIntakeMode() {
         return isIntakeMode;
     }
+
+    /**
+     * Sync LED color with intake mode state
+     * Called by RobotSystem.updateAll() to keep LED in sync with AutoIntakeSystem
+     * @param intakeMode true if in intake mode, false if in launch mode
+     */
+    public void syncWithIntakeMode(boolean intakeMode) {
+        if (intakeMode && !isIntakeMode) {
+            setIntakeModeColor();
+        } else if (!intakeMode && isIntakeMode) {
+            setLaunchModeColor();
+        }
+    }
+
+    /**
+     * Turn off LED
+     */
+    public void turnOff() {
+        if (servos != null && servos.colorservo != null) {
+            servos.colorservo.setPosition(RobotConstants.ColorServo.OFF);
+        }
+    }
 }

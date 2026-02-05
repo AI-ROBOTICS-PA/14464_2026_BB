@@ -55,18 +55,20 @@ public class TurretTest extends OpMode {
     private double previousError = 0;
     private double integral = 0;
 
-    // Constants (calibrated)
-    private static final double TICKS_PER_DEGREE = 3.01;  // Measured from TurretCalibration
-    private static final double MAX_ENCODER_POSITION = 1083;  // ~360 degrees (full rotation)
-    private static final double MIN_ENCODER_POSITION = -1083; // ~-360 degrees (full rotation)
-    private static final double WIRE_LIMIT = 360;  // Auto-unwind at exactly 360° (one full rotation)
-    private static final double UNWIND_HYSTERESIS = 10;  // Don't re-trigger unwind until 10° past limit
+    // Use RobotConstants.Turret for shared calibration values
+    private static final double TICKS_PER_DEGREE = RobotConstants.Turret.TICKS_PER_DEGREE;
+    
+    // TurretTest-specific limits (±360° for counter-rotation testing, not ±150° goal-tracking limits)
+    private static final double MAX_ENCODER_POSITION = 1083;  // ~360 degrees (full rotation for testing)
+    private static final double MIN_ENCODER_POSITION = -1083; // ~-360 degrees (full rotation for testing)
+    private static final double WIRE_LIMIT = RobotConstants.Turret.WIRE_LIMIT_DEGREES;
+    private static final double UNWIND_HYSTERESIS = RobotConstants.Turret.UNWIND_HYSTERESIS;
 
-    // Control parameters - Optimized for GoBilda 5203 312 RPM motor (high torque, slower speed)
-    private static final double KP = 0.010;                   // Proportional gain - increased 67% for faster response
-    private static final double KI = 0.0;                     // Integral gain - kept at 0 to avoid windup
-    private static final double KD = 0.0015;                  // Derivative gain - tripled for better damping, less overshoot
-    private static final double MAX_POWER = 0.45;             // Increased power limit - 312 RPM motor can handle more
+    // Use RobotConstants.Turret for PID parameters (ensures consistency)
+    private static final double KP = RobotConstants.Turret.KP;
+    private static final double KI = RobotConstants.Turret.KI;
+    private static final double KD = RobotConstants.Turret.KD;
+    private static final double MAX_POWER = RobotConstants.Turret.MAX_POWER;
     private static final double POSITION_TOLERANCE = 12;      // ticks (~4 degrees) - tighter accuracy for shooting
 
     // Button state tracking
@@ -152,7 +154,7 @@ public class TurretTest extends OpMode {
             currentMode = TestMode.MANUAL;
             motors.turret.setPower(0);
             previousError = 0;
-                        integral = 0;
+            integral = 0;
         }
         prevDpadLeft = gamepad1.dpad_left;
 

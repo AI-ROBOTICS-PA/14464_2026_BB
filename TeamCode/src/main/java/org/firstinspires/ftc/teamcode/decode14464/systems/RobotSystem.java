@@ -130,6 +130,11 @@ public class RobotSystem {
         autoIntake.update();             // Handle auto-advancement
         shooting.update();               // Process shooting sequence
         autoShoot.update();              // Update auto-shoot state machine
+        
+        // Sync LED with intake mode
+        if (led != null && autoIntake != null) {
+            led.syncWithIntakeMode(autoIntake.isIntakeMode());
+        }
     }
 
     /**
@@ -140,6 +145,7 @@ public class RobotSystem {
         if (shooting != null) shooting.stopShooter();
         if (autoShoot != null) autoShoot.stop();
         if (autoIntake != null) autoIntake.stopAll();
+        if (led != null) led.turnOff();
     }
 
     /**
@@ -176,9 +182,17 @@ public class RobotSystem {
 
     /**
      * Quick access: Check if ready to shoot (turret on target, shooter at speed)
+     * Note: If autoTurret is disabled, we assume turret is manually positioned and ready
      */
     public boolean isReadyToShoot() {
-        boolean turretReady = autoTurret != null && autoTurret.isOnTarget();
+        boolean turretReady;
+        if (autoTurret != null && autoTurret.isEnabled()) {
+            // Auto-turret is active - check if on target
+            turretReady = autoTurret.isOnTarget();
+        } else {
+            // Auto-turret disabled or not initialized - assume manually ready
+            turretReady = true;
+        }
         boolean shooterReady = shooting != null && shooting.isShooterAtTargetVelocity();
         return turretReady && shooterReady;
     }

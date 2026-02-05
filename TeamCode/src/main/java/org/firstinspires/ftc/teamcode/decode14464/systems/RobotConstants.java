@@ -17,21 +17,29 @@ public class RobotConstants {
     }
 
     // ==================== TURRET MOTOR CONSTANTS ====================
+    // Optimized for GoBilda 5203 312 RPM Yellow Jacket motor
     public static final class Turret {
-        // PID Constants for auto-tracking
-        public static final double KP = 0.015;
-        public static final double KI = 0.0;
-        public static final double KD = 0.001;
+        // PID Constants for auto-tracking (optimized for 312 RPM motor)
+        public static final double KP = 0.010;      // Proportional gain
+        public static final double KI = 0.0;        // No integral (avoid windup)
+        public static final double KD = 0.0015;     // Derivative for damping
         public static final double KF = 0.0;
 
         // Limits
-        public static final double MAX_POWER = 0.5;
-        public static final double MIN_POWER = -0.5;
-        public static final double DEADBAND_DEGREES = 2.0;
+        public static final double MAX_POWER = 0.45;
+        public static final double MIN_POWER = -0.45;
+        public static final double DEADBAND_DEGREES = 4.0;  // ~12 ticks at 3.01 ticks/deg
 
-        // Encoder limits (if using)
-        public static final int MAX_ENCODER_POSITION = 1000;
-        public static final int MIN_ENCODER_POSITION = -1000;
+        // Encoder calibration: 3.01 ticks per degree (measured)
+        public static final double TICKS_PER_DEGREE = 3.01;
+        
+        // Encoder limits for goal-tracking mode (~150° each direction)
+        public static final int MAX_ENCODER_POSITION = 451;
+        public static final int MIN_ENCODER_POSITION = -451;
+        
+        // Counter-rotation wire limits
+        public static final double WIRE_LIMIT_DEGREES = 360;
+        public static final double UNWIND_HYSTERESIS = 10;
 
         // AprilTag IDs
         public static final int PRIMARY_TAG_ID = 20;

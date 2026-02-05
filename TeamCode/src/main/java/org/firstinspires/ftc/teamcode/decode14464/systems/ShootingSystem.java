@@ -77,6 +77,13 @@ public class ShootingSystem {
             return;
         }
 
+        // Safety check - can't run without servos
+        if (servos == null || servos.ballpush_4 == null) {
+            isAutoShootingInProgress = false;
+            currentState = ShootingState.IDLE;
+            return;
+        }
+
         double elapsed = shootTimer.milliseconds();
 
         switch (currentState) {
@@ -88,7 +95,9 @@ public class ShootingSystem {
                 if (isShooterAtTargetVelocity()) {
                     // Shooter ready, start pushing balls
                     currentState = ShootingState.PUSH_BALL_1;
-                    intakeSystem.setLaunchMode(); // Ensure in launch mode
+                    if (intakeSystem != null) {
+                        intakeSystem.setLaunchMode(); // Ensure in launch mode
+                    }
                     shootTimer.reset();
                 }
                 break;
@@ -119,7 +128,9 @@ public class ShootingSystem {
 
             case ADVANCE_TURRET_1:
                 // Now safe to move turret - ball push is fully retracted
-                intakeSystem.advanceToNextSlot();
+                if (intakeSystem != null) {
+                    intakeSystem.advanceToNextSlot();
+                }
                 currentState = ShootingState.WAIT_TURRET_1;
                 shootTimer.reset();
                 break;
@@ -158,7 +169,9 @@ public class ShootingSystem {
 
             case ADVANCE_TURRET_2:
                 // Now safe to move turret - ball push is fully retracted
-                intakeSystem.advanceToNextSlot();
+                if (intakeSystem != null) {
+                    intakeSystem.advanceToNextSlot();
+                }
                 currentState = ShootingState.WAIT_TURRET_2;
                 shootTimer.reset();
                 break;
@@ -257,7 +270,9 @@ public class ShootingSystem {
     public void stopAutoShoot() {
         isAutoShootingInProgress = false;
         currentState = ShootingState.IDLE;
-        servos.ballpush_4.setPosition(RobotConstants.BallPush.RETRACT_POSITION);
+        if (servos != null && servos.ballpush_4 != null) {
+            servos.ballpush_4.setPosition(RobotConstants.BallPush.RETRACT_POSITION);
+        }
     }
 
     /**
@@ -337,14 +352,18 @@ public class ShootingSystem {
      * Manual ball push (for testing)
      */
     public void pushBall() {
-        servos.ballpush_4.setPosition(RobotConstants.BallPush.PUSH_POSITION);
+        if (servos != null && servos.ballpush_4 != null) {
+            servos.ballpush_4.setPosition(RobotConstants.BallPush.PUSH_POSITION);
+        }
     }
 
     /**
      * Manual ball retract (for testing)
      */
     public void retractBall() {
-        servos.ballpush_4.setPosition(RobotConstants.BallPush.RETRACT_POSITION);
+        if (servos != null && servos.ballpush_4 != null) {
+            servos.ballpush_4.setPosition(RobotConstants.BallPush.RETRACT_POSITION);
+        }
     }
 
     /**

@@ -14,17 +14,33 @@ public class AutoTurretSystem {
     private RobotMotors motors;
     private LocalizationSystem localization;
     private boolean enabled = false;
+    private boolean counterRotationEnabled = false;  // Counter-rotation mode
 
     private double previousError = 0;
     private double integral = 0;
 
-    // Encoder-based rotation limits (prevents runaway rotation)
-    // CALIBRATED: 3.01 ticks per degree (measured with TurretCalibration on Feb 4, 2026)
-    // 271 ticks for 90 degrees → 3.01 ticks/degree
-    // Max rotation: ±150 degrees → ±451 ticks
-    private static final double MAX_ENCODER_POSITION = 451;   // ~150 degrees (3.01 ticks/degree)
-    private static final double MIN_ENCODER_POSITION = -451;  // ~-150 degrees
+    // Counter-rotation tracking (for field-centric turret positioning)
+    private double turretTargetPosition = 0;      // Target encoder position (can go beyond ±360°)
+    private double lastHeading = 0;               // Last robot heading
+    private double totalRobotRotation = 0;        // Total accumulated rotation
+    private double lastTotalRotation = 0;         // For reversal detection
+    private double previousHeadingChange = 0;     // For direction-change detection
+    private boolean hasUnwound = false;           // Prevent repeated unwinding
+
+    // Local constants (use RobotConstants.Turret for shared values)
     private static final double SOFT_LIMIT_ZONE = 50;         // Slow down within 50 ticks of limit
+    private static final double POSITION_TOLERANCE = 12;      // ~4° accuracy
+    
+    // Shorthand references to RobotConstants.Turret for cleaner code
+    private static final double TICKS_PER_DEGREE = RobotConstants.Turret.TICKS_PER_DEGREE;
+    private static final int MAX_ENCODER_POSITION = RobotConstants.Turret.MAX_ENCODER_POSITION;
+    private static final int MIN_ENCODER_POSITION = RobotConstants.Turret.MIN_ENCODER_POSITION;
+    private static final double WIRE_LIMIT = RobotConstants.Turret.WIRE_LIMIT_DEGREES;
+    private static final double UNWIND_HYSTERESIS = RobotConstants.Turret.UNWIND_HYSTERESIS;
+    private static final double KP = RobotConstants.Turret.KP;
+    private static final double KI = RobotConstants.Turret.KI;
+    private static final double KD = RobotConstants.Turret.KD;
+    private static final double MAX_POWER = RobotConstants.Turret.MAX_POWER;
 
     /**
      * Initialize turret system with centralized motors
@@ -33,19 +49,22 @@ public class AutoTurretSystem {
         this.motors = motors;
         this.localization = localizationSystem;
 
-        // Ensure turret motor is properly initialized
+        // Ensure turret motor is properly initialized (encoder reset done in RobotMotors.init())
         if (motors != null && motors.turret != null) {
-            motors.turret.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
             motors.turret.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
             motors.turret.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         }
+
+        // Initialize counter-rotation tracking
+        resetCounterRotationTracking();
     }
 
     /**
-     * Enable auto-tracking
+     * Enable auto-tracking (goal-relative mode)
      */
     public void enable() {
         enabled = true;
+        counterRotationEnabled = false;
         previousError = 0;
         integral = 0;
     }
@@ -55,11 +74,39 @@ public class AutoTurretSystem {
      */
     public void disable() {
         enabled = false;
+        counterRotationEnabled = false;
         if (motors != null && motors.turret != null) {
             motors.turret.setPower(0);
         }
         previousError = 0;
         integral = 0;
+    }
+
+    /**
+     * Enable counter-rotation mode (field-centric turret)
+     * Turret maintains its field orientation as robot rotates
+     */
+    public void enableCounterRotation() {
+        counterRotationEnabled = true;
+        enabled = false;  // Disable goal-tracking
+        resetCounterRotationTracking();
+    }
+
+    /**
+     * Disable counter-rotation mode
+     */
+    public void disableCounterRotation() {
+        counterRotationEnabled = false;
+        if (motors != null && motors.turret != null) {
+            motors.turret.setPower(0);
+        }
+    }
+
+    /**
+     * Check if counter-rotation is enabled
+     */
+    public boolean isCounterRotationEnabled() {
+        return counterRotationEnabled;
     }
 
     /**
@@ -82,13 +129,27 @@ public class AutoTurretSystem {
 
     /**
      * Update turret tracking - call this every loop
-     * FIXED: Now includes encoder limits to prevent excessive rotation
+     * Supports two modes:
+     * 1. Goal-tracking: Points turret at goal (with ±150° limits)
+     * 2. Counter-rotation: Maintains field orientation (unlimited rotation with wire safety)
      */
     public void update() {
-        if (!enabled || motors == null || localization == null) {
+        // Null safety check - verify all required components exist
+        if (motors == null || motors.turret == null || localization == null) {
             return;
         }
 
+        if (counterRotationEnabled) {
+            updateCounterRotation();
+        } else if (enabled) {
+            updateGoalTracking();
+        }
+    }
+
+    /**
+     * Update goal-tracking mode (original behavior with limits)
+     */
+    private void updateGoalTracking() {
         // Calculate angle to goal
         double angleToGoal = localization.getAngleToPoint(
             RobotConstants.Field.GOAL_X,
@@ -99,16 +160,10 @@ public class AutoTurretSystem {
         double robotHeading = localization.getHeadingDegrees();
 
         // Calculate turret angle (relative to robot)
-        double turretAngle = angleToGoal - robotHeading;
-
-        // Normalize to -180 to 180
-        while (turretAngle > 180) turretAngle -= 360;
-        while (turretAngle <= -180) turretAngle += 360;
+        double turretAngle = normalizeAngle(angleToGoal - robotHeading);
 
         // SAFETY CHECK: Limit turret angle to reasonable range
-        // This prevents trying to rotate 300+ degrees
         if (Math.abs(turretAngle) > 120) {
-            // If angle is too large, stop and alert
             motors.turret.setPower(0);
             previousError = 0;
             integral = 0;
@@ -127,10 +182,16 @@ public class AutoTurretSystem {
         }
 
         // Calculate PID terms
-        integral += error;
+        if (KI != 0) {
+            integral += error;
+            // Anti-windup
+            double integralLimit = 500;
+            integral = Math.max(-integralLimit, Math.min(integralLimit, integral));
+        }
+
         double derivative = error - previousError;
 
-        // PID control (using KP and KD)
+        // PID control
         double power = (error * RobotConstants.Turret.KP) +
                       (integral * RobotConstants.Turret.KI) +
                       (derivative * RobotConstants.Turret.KD);
@@ -138,22 +199,19 @@ public class AutoTurretSystem {
         // Get current encoder position for limit checking
         int currentPosition = motors.turret.getCurrentPosition();
 
-        // Enforce encoder limits (hard stops)
+        // Enforce encoder limits (hard stops at ±150°)
         power = enforceTurretLimits(currentPosition, power);
 
         // Clamp power
         power = Math.max(-RobotConstants.Turret.MAX_POWER,
                         Math.min(RobotConstants.Turret.MAX_POWER, power));
 
-        // Apply minimum power threshold to overcome friction
+        // Apply minimum power threshold
         if (Math.abs(power) > 0.01 && Math.abs(power) < 0.1) {
             power = Math.signum(power) * 0.1;
         }
 
-        // Apply power
         motors.turret.setPower(power);
-
-        // Save error for next iteration
         previousError = error;
     }
 
@@ -212,12 +270,8 @@ public class AutoTurretSystem {
             RobotConstants.Field.GOAL_Y
         );
         double robotHeading = localization.getHeadingDegrees();
-        double turretAngle = angleToGoal - robotHeading;
-
-        while (turretAngle > 180) turretAngle -= 360;
-        while (turretAngle <= -180) turretAngle += 360;
-
-        return turretAngle;
+        
+        return normalizeAngle(angleToGoal - robotHeading);
     }
 
     /**
@@ -296,7 +350,170 @@ public class AutoTurretSystem {
             motors.turret.setPower(0);
         }
         enabled = false;
+        counterRotationEnabled = false;
         previousError = 0;
         integral = 0;
     }
+
+    // ==================== COUNTER-ROTATION MODE ====================
+
+    /**
+     * Update counter-rotation mode
+     * Turret rotates opposite to robot rotation to maintain field orientation
+     */
+    private void updateCounterRotation() {
+        double currentHeading = localization.getHeadingDegrees();
+        double rawHeadingChange = currentHeading - lastHeading;
+
+        // Normalize heading change for boundary crossings
+        double headingChange = rawHeadingChange;
+        if (rawHeadingChange > 180) {
+            headingChange = rawHeadingChange - 360;
+        } else if (rawHeadingChange < -180) {
+            headingChange = rawHeadingChange + 360;
+        }
+
+        // Track total rotation
+        totalRobotRotation += headingChange;
+
+        // Counter-rotate: if robot turns right (+), turret turns left (-)
+        turretTargetPosition -= headingChange * TICKS_PER_DEGREE;
+
+        // REVERSAL DETECTION: Check if direction changed
+        boolean directionChanged = (previousHeadingChange != 0) &&
+                                   (Math.signum(headingChange) != Math.signum(previousHeadingChange)) &&
+                                   (Math.abs(headingChange) > 1.0);
+
+        // Reset unwind flag when we complete another full rotation
+        if (Math.abs(totalRobotRotation) > 360) {
+            hasUnwound = false;
+        }
+
+        // If direction reversed and haven't unwound yet, unwind turret
+        if (directionChanged && !hasUnwound && Math.abs(lastTotalRotation) > 300) {
+            double currentTurretDegrees = turretTargetPosition / TICKS_PER_DEGREE;
+
+            if (Math.abs(currentTurretDegrees) > 20) {
+                if (currentTurretDegrees > 0) {
+                    turretTargetPosition -= 360.0 * TICKS_PER_DEGREE;
+                } else {
+                    turretTargetPosition += 360.0 * TICKS_PER_DEGREE;
+                }
+                hasUnwound = true;
+            }
+        }
+
+        // WIRE LIMIT PROTECTION: Unwind at ±370° (with hysteresis)
+        double currentTurretDegrees = turretTargetPosition / TICKS_PER_DEGREE;
+        if (currentTurretDegrees > WIRE_LIMIT + UNWIND_HYSTERESIS) {
+            turretTargetPosition -= 360.0 * TICKS_PER_DEGREE;
+        } else if (currentTurretDegrees < -(WIRE_LIMIT + UNWIND_HYSTERESIS)) {
+            turretTargetPosition += 360.0 * TICKS_PER_DEGREE;
+        }
+
+        // Run PID to target position
+        runTurretToPosition();
+
+        // Update tracking variables
+        lastHeading = currentHeading;
+        lastTotalRotation = totalRobotRotation;
+        
+        // Only update previous heading change if significant movement (prevents noise)
+        if (Math.abs(headingChange) > 0.5) {
+            previousHeadingChange = headingChange;
+        }
+    }
+
+    /**
+     * Run turret motor to target position using optimized PID control
+     */
+    private void runTurretToPosition() {
+        double currentPosition = motors.turret.getCurrentPosition();
+        double error = turretTargetPosition - currentPosition;
+
+        // Check if at target
+        if (Math.abs(error) <= POSITION_TOLERANCE) {
+            motors.turret.setPower(0);
+            previousError = 0;
+            integral = 0;
+            return;
+        }
+
+        // PID calculation (KI = 0, so skip integral)
+        if (KI != 0) {
+            integral += error;
+            double integralLimit = 500;
+            integral = Math.max(-integralLimit, Math.min(integralLimit, integral));
+        }
+
+        double derivative = error - previousError;
+        double power = (KP * error) + (KI * integral) + (KD * derivative);
+
+        // Clamp power
+        power = Math.max(-MAX_POWER, Math.min(MAX_POWER, power));
+
+        // Minimum power threshold
+        double minPower = 0.06;
+        if (Math.abs(power) > 0.01 && Math.abs(power) < minPower) {
+            power = Math.signum(power) * minPower;
+        }
+
+        // Apply smooth power changes (prevent jerky motion)
+        double maxPowerChange = 0.10;
+        double lastPower = motors.turret.getPower();
+        double powerChange = power - lastPower;
+
+        if (Math.abs(powerChange) > maxPowerChange) {
+            power = lastPower + Math.signum(powerChange) * maxPowerChange;
+        }
+
+        motors.turret.setPower(power);
+        previousError = error;
+    }
+
+    /**
+     * Reset counter-rotation tracking
+     */
+    private void resetCounterRotationTracking() {
+        if (localization != null) {
+            lastHeading = localization.getHeadingDegrees();
+        }
+        totalRobotRotation = 0;
+        lastTotalRotation = 0;
+        previousHeadingChange = 0;
+        hasUnwound = false;
+        if (motors != null && motors.turret != null) {
+            turretTargetPosition = motors.turret.getCurrentPosition();
+        }
+        previousError = 0;
+        integral = 0;
+    }
+
+    /**
+     * Normalize angle to -180 to +180 range (efficient modulo version)
+     */
+    private double normalizeAngle(double angle) {
+        angle = angle % 360;
+        if (angle > 180) {
+            angle -= 360;
+        } else if (angle < -180) {
+            angle += 360;
+        }
+        return angle;
+    }
+
+    /**
+     * Get total robot rotation (for telemetry/debugging)
+     */
+    public double getTotalRobotRotation() {
+        return totalRobotRotation;
+    }
+
+    /**
+     * Get turret target position in degrees (for telemetry/debugging)
+     */
+    public double getTurretTargetDegrees() {
+        return turretTargetPosition / TICKS_PER_DEGREE;
+    }
+
 }
