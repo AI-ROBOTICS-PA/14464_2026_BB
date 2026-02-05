@@ -147,7 +147,7 @@ public class TurretTest extends OpMode {
             currentMode = TestMode.MANUAL;
             motors.turret.setPower(0);
             previousError = 0;
-            integral = 0;
+                        integral = 0;
         }
         prevDpadLeft = gamepad1.dpad_left;
 
@@ -191,35 +191,39 @@ public class TurretTest extends OpMode {
      * Turret rotates opposite to robot rotation to maintain its field orientation
      * When robot turns right (+), turret turns left (-) relative to robot
      *
-     * WIRE PROTECTION: Automatically unwinds when approaching 360° limit
+     * SIMPLE LOGIC: Only fix large jumps (boundary crossings), otherwise follow heading directly
      */
     private void updateCounterRotation() {
         double currentHeading = localization.getHeadingDegrees();
-        double headingChange = currentHeading - lastHeading;
+        double rawHeadingChange = currentHeading - lastHeading;
 
-        // Normalize heading change to -180 to 180
-        while (headingChange > 180) headingChange -= 360;
-        while (headingChange < -180) headingChange += 360;
+        double headingChange = rawHeadingChange;
 
-        // Track total rotation (accumulate all heading changes)
+        // ONLY fix if there's a LARGE single-step jump (boundary crossing)
+        // Example: Robot jumps from 357° to 7° in ONE step → raw change is -350°
+        if (rawHeadingChange > 180) {
+            headingChange = rawHeadingChange - 360;
+            telemetry.log().add("Boundary: " + String.format("%.0f", rawHeadingChange) + "° → " + String.format("%.0f", headingChange) + "°");
+        } else if (rawHeadingChange < -180) {
+            headingChange = rawHeadingChange + 360;
+            telemetry.log().add("Boundary: " + String.format("%.0f", rawHeadingChange) + "° → " + String.format("%.0f", headingChange) + "°");
+        }
+        // Otherwise: use raw change directly (allows smooth 0→100→200→360 tracking)
+
+        // Track total rotation
         totalRobotRotation += headingChange;
 
         // Counter-rotate: if robot turns right (+), turret turns left (-)
-        // This keeps turret pointing at same field direction
         turretTargetPosition -= headingChange * TICKS_PER_DEGREE;
 
-        // WIRE PROTECTION: Check if we're approaching wire limits
+        // WIRE LIMIT: Only unwind at ±360° (safety backup)
         double currentTurretDegrees = turretTargetPosition / TICKS_PER_DEGREE;
-
-        // If turret has rotated more than WIRE_LIMIT degrees, unwind by rotating the other way
         if (currentTurretDegrees > WIRE_LIMIT) {
-            // Unwind: Add a full -360° rotation to get same orientation
             turretTargetPosition -= 360.0 * TICKS_PER_DEGREE;
-            telemetry.log().add("🔄 Wire unwinding: Rotating -360° to maintain position");
+            telemetry.log().add("WIRE LIMIT: Unwinding -360°");
         } else if (currentTurretDegrees < -WIRE_LIMIT) {
-            // Unwind: Add a full +360° rotation to get same orientation
             turretTargetPosition += 360.0 * TICKS_PER_DEGREE;
-            telemetry.log().add("🔄 Wire unwinding: Rotating +360° to maintain position");
+            telemetry.log().add("WIRE LIMIT: Unwinding +360°");
         }
 
         lastHeading = currentHeading;
