@@ -27,7 +27,8 @@ import org.firstinspires.ftc.teamcode.decode14464.HoodConstants;
  * - Right Stick X: Turret manual override (variable speed)
  * - D-Pad Left/Right: Turret manual override (fine control)
  * - D-Pad Up/Down: Hood fine control (+/- 0.02)
- * - Left Bumper: RECALIBRATE turret (locks current position as correct reference)
+ * - Left Bumper: Manual RECALIBRATE (locks current position as correct reference)
+ * - Right Bumper: LIMELIGHT CALIBRATE (uses AprilTag for precision calibration)
  *
  * Auto-Turret Behavior:
  * =====================
@@ -35,6 +36,13 @@ import org.firstinspires.ftc.teamcode.decode14464.HoodConstants;
  * - GP2 controls provide MANUAL OVERRIDE when you need to adjust
  * - When you've manually aimed correctly, press LEFT BUMPER to RECALIBRATE
  * - Recalibrate tells the system "this is the correct position" and fixes drift
+ *
+ * Limelight Calibration:
+ * ======================
+ * - AUTOMATIC: Calibrates continuously when AprilTag visible and robot stationary
+ * - MANUAL: Press GP2 RIGHT BUMPER when AprilTag visible for instant calibration
+ * - Calibrates BOTH turret pointing AND robot localization position
+ * - Uses AprilTag detection to fix any odometry drift or turret offset
  *
  * Hood Presets:
  * =============
@@ -102,6 +110,16 @@ public class DecodeTeleOp extends OpMode {
     private static final double TURRET_MANUAL_POWER = 0.3; // Manual control power level
     private boolean turretManualOverride = false; // True when GP2 is actively controlling turret
     private boolean prevGP2LeftBumper = false; // For recalibrate button detection
+    private boolean prevGP2RightBumper = false; // For Limelight calibration button
+
+    // ========== LIMELIGHT AUTO-CALIBRATION ==========
+    private static final double AUTO_CALIBRATE_COOLDOWN_MS = 2000; // Minimum time between auto-calibrations
+    private static final double AUTO_CALIBRATE_TX_THRESHOLD = 5.0; // Max tx error (degrees) for auto-calibrate
+    private static final double AUTO_CALIBRATE_VELOCITY_THRESHOLD = 0.3; // Max robot velocity for auto-calibrate
+    private double lastAutoCalibrationTime = 0;
+    private double lastManualCalibrationTime = 0;
+    private boolean autoCalibrationEnabled = true; // Can be toggled if needed
+    private String lastCalibrationStatus = "None"; // For telemetry
 
     @Override
     public void init() {
@@ -305,9 +323,24 @@ public class DecodeTeleOp extends OpMode {
         boolean gp2LeftBumperPressed = gamepad2.left_bumper;
         if (gp2LeftBumperPressed && !prevGP2LeftBumper) {
             robot.autoTurret.recalibratePosition();
+            lastCalibrationStatus = "Manual (LB)";
             telemetry.addLine("✅ Turret RECALIBRATED - Position locked as reference!");
         }
         prevGP2LeftBumper = gp2LeftBumperPressed;
+
+        // ========== GP2: LIMELIGHT CALIBRATION (Right Bumper) ==========
+        // Press Right Bumper to trigger Limelight-based calibration (when AprilTag visible)
+        boolean gp2RightBumperPressed = gamepad2.right_bumper;
+        if (gp2RightBumperPressed && !prevGP2RightBumper) {
+            performLimelightCalibration(true); // true = manual trigger
+        }
+        prevGP2RightBumper = gp2RightBumperPressed;
+
+        // ========== AUTOMATIC LIMELIGHT CALIBRATION ==========
+        // Auto-calibrate when conditions are good
+        if (autoCalibrationEnabled && !turretManualOverride) {
+            performAutoCalibration();
+        }
 
         // ========== SHOOTER VELOCITY TOGGLE (Left Trigger) ==========
         // Press left trigger (>0.5) to toggle between HIGH and LOW velocity
@@ -357,6 +390,92 @@ public class DecodeTeleOp extends OpMode {
 
         // ========== TELEMETRY ==========
         updateTelemetry();
+    }
+
+    /**
+     * Perform Limelight-based calibration
+     * Calibrates both localization (position) and turret (pointing)
+     * @param isManual true if triggered by button press, false if auto-triggered
+     */
+    private void performLimelightCalibration(boolean isManual) {
+        // Check if Limelight is available and has valid target
+        if (robot.limelight == null || !robot.limelight.isConnected()) {
+            if (isManual) {
+                lastCalibrationStatus = "FAILED: No Limelight";
+            }
+            return;
+        }
+        
+        if (!robot.limelight.hasValidTarget()) {
+            if (isManual) {
+                lastCalibrationStatus = "FAILED: No AprilTag";
+            }
+            return;
+        }
+        
+        double currentTime = System.currentTimeMillis();
+        
+        // Get Limelight data
+        double tx = robot.limelight.getTargetX(); // Horizontal angle to target
+        com.pedropathing.geometry.Pose limelightPose = robot.limelight.getRobotPoseFromAprilTag();
+        
+        // === TURRET CALIBRATION ===
+        // Use tx (horizontal angle) to calibrate turret pointing
+        if (Math.abs(tx) > 0.5) { // Only calibrate if there's meaningful offset
+            robot.autoTurret.calibrateFromLimelight(tx);
+        }
+        
+        // === LOCALIZATION CALIBRATION ===
+        // Use botpose to calibrate robot position (if available)
+        if (limelightPose != null) {
+            robot.localization.calibrateFromLimelight(limelightPose);
+        }
+        
+        // Update status
+        if (isManual) {
+            lastManualCalibrationTime = currentTime;
+            lastCalibrationStatus = String.format("Manual OK (tx=%.1f°)", tx);
+            telemetry.addLine("✅ LIMELIGHT CALIBRATION COMPLETE!");
+            telemetry.addLine(String.format("   Turret offset: %.1f°", tx));
+            if (limelightPose != null) {
+                telemetry.addLine(String.format("   Position: (%.1f, %.1f)", limelightPose.getX(), limelightPose.getY()));
+            }
+        } else {
+            lastAutoCalibrationTime = currentTime;
+            lastCalibrationStatus = String.format("Auto OK (tx=%.1f°)", tx);
+        }
+    }
+
+    /**
+     * Automatic calibration - triggers when conditions are optimal
+     */
+    private void performAutoCalibration() {
+        // Check cooldown
+        double currentTime = System.currentTimeMillis();
+        if (currentTime - lastAutoCalibrationTime < AUTO_CALIBRATE_COOLDOWN_MS) {
+            return; // Still in cooldown
+        }
+        
+        // Check if Limelight has valid target
+        if (robot.limelight == null || !robot.limelight.hasValidTarget()) {
+            return;
+        }
+        
+        // Check if robot is relatively stationary (not moving fast)
+        // Use gamepad inputs as proxy for movement
+        double driveInput = Math.abs(gamepad1.left_stick_x) + Math.abs(gamepad1.left_stick_y) + Math.abs(gamepad1.right_stick_x);
+        if (driveInput > AUTO_CALIBRATE_VELOCITY_THRESHOLD) {
+            return; // Robot is moving too fast
+        }
+        
+        // Check tx error - only auto-calibrate if we're close but not perfect
+        double tx = robot.limelight.getTargetX();
+        if (Math.abs(tx) > AUTO_CALIBRATE_TX_THRESHOLD) {
+            return; // Error too large for auto-calibrate (might be wrong target)
+        }
+        
+        // All conditions met - perform calibration
+        performLimelightCalibration(false); // false = auto trigger
     }
 
     private void updateTelemetry() {
@@ -417,6 +536,24 @@ public class DecodeTeleOp extends OpMode {
         telemetry.addData("Status", robot.autoTurret.isOnTarget() ? "✓ ON TARGET" : "⏳ Adjusting");
         telemetry.addData("Turret Angle", "%.1f°", robot.autoTurret.getTurretAngle());
 
+        // ===== LIMELIGHT STATUS =====
+        telemetry.addLine();
+        telemetry.addLine("===== LIMELIGHT =====");
+        if (robot.limelight != null && robot.limelight.isConnected()) {
+            telemetry.addData("Camera", "✓ Connected");
+            if (robot.limelight.hasValidTarget()) {
+                telemetry.addData("AprilTag", "✓ VISIBLE");
+                telemetry.addData("tx (offset)", "%.1f°", robot.limelight.getTargetX());
+                telemetry.addData("Tags Seen", robot.limelight.getVisibleTagCount());
+            } else {
+                telemetry.addData("AprilTag", "✗ Not visible");
+            }
+            telemetry.addData("Last Calibration", lastCalibrationStatus);
+            telemetry.addData("Auto-Calibrate", autoCalibrationEnabled ? "✓ ON" : "✗ OFF");
+        } else {
+            telemetry.addData("Camera", "✗ Not connected");
+        }
+
         // ===== POSITION INFO =====
         telemetry.addLine();
         telemetry.addLine("====== POSITION ======");
@@ -440,7 +577,8 @@ public class DecodeTeleOp extends OpMode {
         telemetry.addData("Right Stick X", "Turret Override");
         telemetry.addData("D-Pad L/R", "Turret Fine Override");
         telemetry.addData("D-Pad U/D", "Hood Fine (+/- " + HOOD_INCREMENT + ")");
-        telemetry.addData("Left Bumper", "RECALIBRATE Turret");
+        telemetry.addData("Left Bumper", "Manual Recalibrate");
+        telemetry.addData("Right Bumper", "Limelight Calibrate");
 
         telemetry.update();
     }

@@ -206,6 +206,44 @@ public class AutoTurretSystem {
     }
 
     /**
+     * Calibrate turret from Limelight AprilTag detection
+     * Uses tx (horizontal angle) to correct turret pointing
+     * @param limelightTx Horizontal angle to target from Limelight (degrees, + = right, - = left)
+     * @return true if calibration was applied
+     */
+    public boolean calibrateFromLimelight(double limelightTx) {
+        if (motors == null || motors.turret == null) {
+            return false;
+        }
+        
+        // If Limelight sees target at tx degrees offset, turret needs to move by that amount
+        // Positive tx = target is to the right = turret needs to turn right (+ encoder)
+        // Negative tx = target is to the left = turret needs to turn left (- encoder)
+        
+        // Convert tx angle to encoder ticks offset
+        double offsetTicks = limelightTx * TICKS_PER_DEGREE;
+        
+        // Adjust target position to account for the offset
+        // Current position + offset = where we should be pointing
+        turretTargetPosition = motors.turret.getCurrentPosition() + offsetTicks;
+        
+        // Reset PID state
+        previousError = 0;
+        integral = 0;
+        
+        return true;
+    }
+
+    /**
+     * Get turret error from Limelight (how far off we are)
+     * @param limelightTx Horizontal angle to target from Limelight
+     * @return Absolute error in degrees
+     */
+    public double getLimelightError(double limelightTx) {
+        return Math.abs(limelightTx);
+    }
+
+    /**
      * Toggle auto-tracking
      */
     public void toggle() {

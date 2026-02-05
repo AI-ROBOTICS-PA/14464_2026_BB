@@ -2,6 +2,7 @@ package org.firstinspires.ftc.teamcode.decode14464.systems;
 
 import com.pedropathing.geometry.Pose;
 import com.qualcomm.robotcore.hardware.HardwareMap;
+import org.firstinspires.ftc.teamcode.decode14464.LimelightManager;
 
 /**
  * Master Robot System
@@ -19,6 +20,7 @@ public class RobotSystem {
     public RobotMotors motors; // Direct motor control
     public RobotSensors sensors; // Centralized sensor management
     public RobotServos servos; // Centralized servo management
+    public LimelightManager limelight; // Limelight camera for AprilTag detection
 
     /**
      * Initialize all systems FOR AUTO PROGRAMS
@@ -66,6 +68,10 @@ public class RobotSystem {
         // 7. Auto-Shoot (depends on motors, servos, sensors, autoIntake)
         autoShoot = new AutoShootSystem();
         autoShoot.init(hardwareMap, motors, servos, sensors, autoIntake);
+
+        // 8. Limelight Manager (for AprilTag detection and calibration)
+        limelight = new LimelightManager();
+        limelight.init(hardwareMap);
 
         // Sync LED with intake mode
         led.setLaunchModeColor(); // Start in launch mode
@@ -115,6 +121,10 @@ public class RobotSystem {
         autoShoot = new AutoShootSystem();
         autoShoot.init(hardwareMap, motors, servos, sensors, autoIntake);
 
+        // 8. Limelight Manager (for AprilTag detection and calibration)
+        limelight = new LimelightManager();
+        limelight.init(hardwareMap);
+
         // Sync LED with intake mode
         led.setLaunchModeColor(); // Start in launch mode
     }
@@ -125,6 +135,7 @@ public class RobotSystem {
     public void updateAll() {
         // Update in correct order
         localization.update();           // Update position first
+        if (limelight != null) limelight.update(); // Update Limelight data
         autoTurret.update();             // Then auto-aim turret
         autoHood.update();               // And adjust hood
         autoIntake.update();             // Handle auto-advancement
@@ -146,6 +157,7 @@ public class RobotSystem {
         if (autoShoot != null) autoShoot.stop();
         if (autoIntake != null) autoIntake.stopAll();
         if (led != null) led.turnOff();
+        if (limelight != null) limelight.stop();
     }
 
     /**

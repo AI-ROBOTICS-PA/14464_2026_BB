@@ -121,6 +121,37 @@ public class LocalizationSystem {
     }
 
     /**
+     * Calibrate position from Limelight AprilTag detection
+     * Uses botpose to correct odometry drift
+     * @param limelightPose The pose from Limelight (can be null if no valid target)
+     * @return true if calibration was applied, false if no valid data
+     */
+    public boolean calibrateFromLimelight(Pose limelightPose) {
+        if (limelightPose == null || follower == null) {
+            return false;
+        }
+        
+        // Apply Limelight pose to correct odometry
+        follower.setPose(limelightPose);
+        return true;
+    }
+
+    /**
+     * Calibrate only heading from Limelight (keeps X,Y from odometry)
+     * Useful when odometry X,Y is reliable but heading has drifted
+     * @param headingRadians New heading in radians from Limelight
+     * @return true if calibration was applied
+     */
+    public boolean calibrateHeadingOnly(double headingRadians) {
+        if (follower == null) return false;
+        
+        Pose currentPose = getPose();
+        Pose newPose = new Pose(currentPose.getX(), currentPose.getY(), headingRadians);
+        follower.setPose(newPose);
+        return true;
+    }
+
+    /**
      * Get follower instance for advanced usage
      */
     public Follower getFollower() {
