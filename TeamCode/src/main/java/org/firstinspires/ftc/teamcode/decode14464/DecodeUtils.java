@@ -3,6 +3,8 @@ package org.firstinspires.ftc.teamcode.decode14464;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 
+import org.firstinspires.ftc.teamcode.decode14464.systems.LimelightManager;
+
 /**
  * Utility class for framework-level helper functions for Decode14464 package.
  * Add static methods here for code reuse across OpModes and subsystems.
@@ -316,8 +318,8 @@ public class DecodeUtils {
         power = Math.max(-TurretConstants.MAX_TURRET_POWER, 
                         Math.min(TurretConstants.MAX_TURRET_POWER, power));
 
-        if (Math.abs(power) < TurretConstants.MIN_TURRET_POWER && Math.abs(error) > TurretConstants.DEADBAND) {
-            power = Math.signum(power) * TurretConstants.MIN_TURRET_POWER;
+        if (Math.abs(power) < TurretConstants.MIN_POWER_THRESHOLD && Math.abs(error) > TurretConstants.DEADBAND) {
+            power = Math.signum(power) * TurretConstants.MIN_POWER_THRESHOLD;
         }
 
         pidState.previousError = error;
