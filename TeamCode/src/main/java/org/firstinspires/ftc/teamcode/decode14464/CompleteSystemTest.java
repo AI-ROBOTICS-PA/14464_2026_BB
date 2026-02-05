@@ -33,7 +33,7 @@ import com.pedropathing.geometry.Pose;
  * 4. Manual override working alongside auto systems
  * 5. No excessive rotations or oscillations
  */
-@TeleOp(name = "Complete System Test", group = "Testing")
+// @TeleOp(name = "Complete System Test", group = "Testing")  // DISABLED
 public class CompleteSystemTest extends OpMode {
     private RobotSystem robot;
 

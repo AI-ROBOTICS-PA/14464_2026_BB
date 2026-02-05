@@ -15,6 +15,7 @@ public class AutoTurretSystem {
     private LocalizationSystem localization;
     private boolean enabled = false;
     private boolean counterRotationEnabled = false;  // Counter-rotation mode
+    private boolean combinedGoalTrackingEnabled = false;  // Combined: position + rotation tracking
 
     private double previousError = 0;
     private double integral = 0;
@@ -26,6 +27,11 @@ public class AutoTurretSystem {
     private double lastTotalRotation = 0;         // For reversal detection
     private double previousHeadingChange = 0;     // For direction-change detection
     private boolean hasUnwound = false;           // Prevent repeated unwinding
+
+    // Combined goal tracking state (position + rotation)
+    private double lastX = 0;                     // Last robot X position
+    private double lastY = 0;                     // Last robot Y position
+    private double lastAngleToGoal = 0;           // Last calculated angle to goal
 
     // Local constants (use RobotConstants.Turret for shared values)
     private static final double SOFT_LIMIT_ZONE = 50;         // Slow down within 50 ticks of limit
@@ -70,11 +76,12 @@ public class AutoTurretSystem {
     }
 
     /**
-     * Disable auto-tracking
+     * Disable auto-tracking (all modes)
      */
     public void disable() {
         enabled = false;
         counterRotationEnabled = false;
+        combinedGoalTrackingEnabled = false;
         if (motors != null && motors.turret != null) {
             motors.turret.setPower(0);
         }
@@ -109,6 +116,66 @@ public class AutoTurretSystem {
         return counterRotationEnabled;
     }
 
+    // ==================== COMBINED GOAL TRACKING MODE ====================
+    // This mode tracks the goal based on robot's X,Y position AND handles rotation
+    // Turret will always point at the goal regardless of where robot moves or rotates
+
+    /**
+     * Enable combined goal tracking mode
+     * This is the RECOMMENDED mode for competition - turret always points at goal
+     * Handles both:
+     * - Position changes (robot moving on field)
+     * - Rotation changes (robot spinning)
+     * Uses unlimited rotation with wire protection
+     */
+    public void enableCombinedGoalTracking() {
+        combinedGoalTrackingEnabled = true;
+        counterRotationEnabled = false;
+        enabled = false;
+        resetCombinedGoalTracking();
+    }
+
+    /**
+     * Disable combined goal tracking mode
+     */
+    public void disableCombinedGoalTracking() {
+        combinedGoalTrackingEnabled = false;
+        if (motors != null && motors.turret != null) {
+            motors.turret.setPower(0);
+        }
+    }
+
+    /**
+     * Check if combined goal tracking is enabled
+     */
+    public boolean isCombinedGoalTrackingEnabled() {
+        return combinedGoalTrackingEnabled;
+    }
+
+    /**
+     * Reset combined goal tracking state
+     */
+    private void resetCombinedGoalTracking() {
+        if (localization != null) {
+            lastHeading = localization.getHeadingDegrees();
+            lastX = localization.getX();
+            lastY = localization.getY();
+            lastAngleToGoal = localization.getAngleToPoint(
+                RobotConstants.Field.GOAL_X,
+                RobotConstants.Field.GOAL_Y
+            );
+        }
+        totalRobotRotation = 0;
+        lastTotalRotation = 0;
+        previousHeadingChange = 0;
+        hasUnwound = false;
+        if (motors != null && motors.turret != null) {
+            turretTargetPosition = motors.turret.getCurrentPosition();
+        }
+        previousError = 0;
+        integral = 0;
+    }
+
     /**
      * Toggle auto-tracking
      */
@@ -129,9 +196,10 @@ public class AutoTurretSystem {
 
     /**
      * Update turret tracking - call this every loop
-     * Supports two modes:
-     * 1. Goal-tracking: Points turret at goal (with ±150° limits)
+     * Supports three modes:
+     * 1. Goal-tracking: Points turret at goal (with ±150° limits) - SIMPLE
      * 2. Counter-rotation: Maintains field orientation (unlimited rotation with wire safety)
+     * 3. Combined Goal Tracking: Always points at goal based on X,Y position AND rotation - RECOMMENDED
      */
     public void update() {
         // Null safety check - verify all required components exist
@@ -139,7 +207,9 @@ public class AutoTurretSystem {
             return;
         }
 
-        if (counterRotationEnabled) {
+        if (combinedGoalTrackingEnabled) {
+            updateCombinedGoalTracking();
+        } else if (counterRotationEnabled) {
             updateCounterRotation();
         } else if (enabled) {
             updateGoalTracking();
@@ -343,7 +413,7 @@ public class AutoTurretSystem {
     }
 
     /**
-     * Stop turret motor
+     * Stop turret motor (disables all modes)
      */
     public void stop() {
         if (motors != null && motors.turret != null) {
@@ -351,8 +421,113 @@ public class AutoTurretSystem {
         }
         enabled = false;
         counterRotationEnabled = false;
+        combinedGoalTrackingEnabled = false;
         previousError = 0;
         integral = 0;
+    }
+
+    // ==================== COMBINED GOAL TRACKING UPDATE ====================
+
+    /**
+     * Update combined goal tracking mode
+     * This is the MAIN tracking algorithm that handles both:
+     * 1. Robot POSITION changes (X,Y movement) - recalculates angle to goal
+     * 2. Robot ROTATION changes - counter-rotates turret to compensate
+     * 
+     * The turret will ALWAYS point at the goal regardless of robot movement or rotation
+     * Uses unlimited rotation with automatic wire unwinding
+     */
+    private void updateCombinedGoalTracking() {
+        // Get current robot state
+        double currentX = localization.getX();
+        double currentY = localization.getY();
+        double currentHeading = localization.getHeadingDegrees();
+
+        // Calculate current angle to goal (field-relative, in degrees)
+        double currentAngleToGoal = localization.getAngleToPoint(
+            RobotConstants.Field.GOAL_X,
+            RobotConstants.Field.GOAL_Y
+        );
+
+        // ========== HANDLE ROBOT ROTATION (Counter-Rotation Logic) ==========
+        double rawHeadingChange = currentHeading - lastHeading;
+
+        // Normalize heading change for boundary crossings (e.g., 359° to 1°)
+        double headingChange = rawHeadingChange;
+        if (rawHeadingChange > 180) {
+            headingChange = rawHeadingChange - 360;
+        } else if (rawHeadingChange < -180) {
+            headingChange = rawHeadingChange + 360;
+        }
+
+        // Track total robot rotation (for wire management)
+        totalRobotRotation += headingChange;
+
+        // Counter-rotate for robot heading change: if robot turns right (+), turret turns left (-)
+        turretTargetPosition -= headingChange * TICKS_PER_DEGREE;
+
+        // ========== HANDLE ROBOT POSITION CHANGE (X,Y Movement) ==========
+        // When robot moves, the angle to goal changes
+        // We need to adjust the turret to track this change
+        double angleToGoalChange = currentAngleToGoal - lastAngleToGoal;
+
+        // Normalize angle change for boundary crossings
+        if (angleToGoalChange > 180) {
+            angleToGoalChange -= 360;
+        } else if (angleToGoalChange < -180) {
+            angleToGoalChange += 360;
+        }
+
+        // Adjust turret for position-based angle change
+        // When angle to goal increases (goal moves "right" relative to robot), turret turns right (+)
+        turretTargetPosition += angleToGoalChange * TICKS_PER_DEGREE;
+
+        // ========== REVERSAL DETECTION (From Counter-Rotation) ==========
+        boolean directionChanged = (previousHeadingChange != 0) &&
+                                   (Math.signum(headingChange) != Math.signum(previousHeadingChange)) &&
+                                   (Math.abs(headingChange) > 1.0);
+
+        // Reset unwind flag when we complete another full rotation
+        if (Math.abs(totalRobotRotation) > 360) {
+            hasUnwound = false;
+        }
+
+        // If direction reversed and haven't unwound yet, unwind turret
+        if (directionChanged && !hasUnwound && Math.abs(lastTotalRotation) > 300) {
+            double currentTurretDegrees = turretTargetPosition / TICKS_PER_DEGREE;
+
+            if (Math.abs(currentTurretDegrees) > 20) {
+                if (currentTurretDegrees > 0) {
+                    turretTargetPosition -= 360.0 * TICKS_PER_DEGREE;
+                } else {
+                    turretTargetPosition += 360.0 * TICKS_PER_DEGREE;
+                }
+                hasUnwound = true;
+            }
+        }
+
+        // ========== WIRE LIMIT PROTECTION ==========
+        double currentTurretDegrees = turretTargetPosition / TICKS_PER_DEGREE;
+        if (currentTurretDegrees > WIRE_LIMIT + UNWIND_HYSTERESIS) {
+            turretTargetPosition -= 360.0 * TICKS_PER_DEGREE;
+        } else if (currentTurretDegrees < -(WIRE_LIMIT + UNWIND_HYSTERESIS)) {
+            turretTargetPosition += 360.0 * TICKS_PER_DEGREE;
+        }
+
+        // ========== RUN PID TO TARGET POSITION ==========
+        runTurretToPosition();
+
+        // ========== UPDATE TRACKING VARIABLES ==========
+        lastHeading = currentHeading;
+        lastX = currentX;
+        lastY = currentY;
+        lastAngleToGoal = currentAngleToGoal;
+        lastTotalRotation = totalRobotRotation;
+
+        // Only update previous heading change if significant movement (prevents noise)
+        if (Math.abs(headingChange) > 0.5) {
+            previousHeadingChange = headingChange;
+        }
     }
 
     // ==================== COUNTER-ROTATION MODE ====================
@@ -514,6 +689,38 @@ public class AutoTurretSystem {
      */
     public double getTurretTargetDegrees() {
         return turretTargetPosition / TICKS_PER_DEGREE;
+    }
+
+    /**
+     * Get the last calculated angle to goal (for telemetry/debugging)
+     */
+    public double getLastAngleToGoal() {
+        return lastAngleToGoal;
+    }
+
+    /**
+     * Get robot position for debugging
+     */
+    public double[] getRobotPosition() {
+        if (localization == null) return new double[]{0, 0};
+        return new double[]{localization.getX(), localization.getY()};
+    }
+
+    /**
+     * Get current tracking mode as string (for telemetry)
+     */
+    public String getCurrentMode() {
+        if (combinedGoalTrackingEnabled) return "COMBINED_GOAL_TRACKING";
+        if (counterRotationEnabled) return "COUNTER_ROTATION";
+        if (enabled) return "GOAL_TRACKING";
+        return "DISABLED";
+    }
+
+    /**
+     * Check if any auto mode is active
+     */
+    public boolean isAnyModeEnabled() {
+        return enabled || counterRotationEnabled || combinedGoalTrackingEnabled;
     }
 
 }

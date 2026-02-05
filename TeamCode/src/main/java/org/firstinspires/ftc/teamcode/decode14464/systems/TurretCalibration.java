@@ -15,7 +15,7 @@ import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
  * 5. Calculate: (ending - starting) / 90 = ticks per degree
  * 6. Update AutoTurretSystem.java MAX/MIN_ENCODER_POSITION constants
  */
-@TeleOp(name = "Turret Calibration", group = "Calibration")
+// @TeleOp(name = "Turret Calibration", group = "Calibration")  // DISABLED
 public class TurretCalibration extends OpMode {
     private RobotMotors motors;
     private int initialPosition = 0;

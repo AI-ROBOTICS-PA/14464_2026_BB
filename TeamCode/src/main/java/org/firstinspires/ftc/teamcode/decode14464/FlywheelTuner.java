@@ -6,7 +6,7 @@ import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.PIDFCoefficients;
 
-@TeleOp(name = "Flywheel Tuner", group = "Tuning")
+// @TeleOp(name = "Flywheel Tuner", group = "Tuning")  // DISABLED
 public class FlywheelTuner extends OpMode {
     // Motor
     private DcMotorEx flywheelMotor;

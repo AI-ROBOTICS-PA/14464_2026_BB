@@ -26,7 +26,7 @@ import com.qualcomm.robotcore.hardware.Servo;
  * - D-Pad Left/Right: Adjust max distance
  * - Left Bumper/Right Bumper: Adjust servo position offset
  */
-@TeleOp(name = "Hood Height Tuner", group = "Tuning")
+// @TeleOp(name = "Hood Height Tuner", group = "Tuning")  // DISABLED
 public class HoodHeightTuner extends OpMode {
 
     // Hardware

@@ -8,10 +8,11 @@ import com.qualcomm.robotcore.hardware.DcMotor;
  * Turret Test TeleOp
  * DECODE 14464 - FTC 2026
  *
- * Three Test Modes:
+ * Four Test Modes:
  * 1. Counter-Rotation: Turret rotates opposite to robot rotation to maintain its field orientation
- * 2. Field-Relative: Turret adjusts based on robot's field position/angle to point at goal
- * 3. Combined: Both counter-rotation AND field-relative adjustments work together
+ * 2. Field-Relative: Turret adjusts based on robot's field position/angle to point at goal (LIMITED)
+ * 3. Combined Goal Tracking: BEST MODE - Tracks goal based on X,Y position AND rotation (UNLIMITED)
+ * 4. Manual: Direct control
  *
  * Controls:
  *   Left Stick Y  - Forward/Backward drive
@@ -19,8 +20,8 @@ import com.qualcomm.robotcore.hardware.DcMotor;
  *   Right Stick X - Robot rotation
  *
  *   D-Pad Up      - Mode 1: Counter-Rotation Only
- *   D-Pad Right   - Mode 2: Field-Relative Only (point at goal)
- *   D-Pad Down    - Mode 3: Combined Mode
+ *   D-Pad Right   - Mode 2: Field-Relative Only (limited ±360°)
+ *   D-Pad Down    - Mode 3: Combined Goal Tracking (RECOMMENDED)
  *   D-Pad Left    - Manual Mode (disable auto-turret)
  *
  *   Right Stick Y - Manual turret control (in manual mode only)
@@ -36,11 +37,11 @@ public class TurretTest extends OpMode {
     private enum TestMode {
         MANUAL,              // Manual control only
         COUNTER_ROTATION,    // Compensate for robot rotation
-        FIELD_RELATIVE,      // Adjust based on field position (point at goal)
-        COMBINED             // Both counter-rotation and field-relative
+        FIELD_RELATIVE,      // Adjust based on field position (point at goal) - LIMITED
+        COMBINED             // Combined Goal Tracking: position + rotation (RECOMMENDED)
     }
 
-    private TestMode currentMode = TestMode.COUNTER_ROTATION;  // Start in counter-rotation mode for easy testing
+    private TestMode currentMode = TestMode.COMBINED;  // Start in COMBINED mode (RECOMMENDED)
 
     // Turret control state
     private double turretTargetPosition = 0;  // Target encoder position
@@ -50,6 +51,11 @@ public class TurretTest extends OpMode {
     private double initialHeading = 0;        // Starting heading to track total rotation
     private boolean hasUnwound = false;       // Prevent repeated unwinding in same reversal
     private double previousHeadingChange = 0; // Track direction of rotation for reversal detection
+
+    // Combined Goal Tracking state (X,Y position tracking)
+    private double lastX = 0;                 // Last robot X position
+    private double lastY = 0;                 // Last robot Y position
+    private double lastAngleToGoal = 0;       // Last calculated angle to goal
 
     // PID control
     private double previousError = 0;
@@ -93,18 +99,18 @@ public class TurretTest extends OpMode {
 
         telemetry.addLine("✅ Turret Test Initialized");
         telemetry.addLine();
-        telemetry.addLine("🔄 STARTING IN COUNTER-ROTATION MODE");
-        telemetry.addLine("   Rotate robot to test!");
+        telemetry.addLine("🎯 STARTING IN COMBINED GOAL TRACKING MODE");
+        telemetry.addLine("   Drive AND rotate - turret tracks goal!");
         telemetry.addLine();
         telemetry.addLine("====== MODE CONTROLS ======");
-        telemetry.addLine("D-Pad Up:    Counter-Rotation Test");
-        telemetry.addLine("D-Pad Right: Field-Relative Test");
-        telemetry.addLine("D-Pad Down:  Combined Test");
+        telemetry.addLine("D-Pad Up:    Counter-Rotation Only");
+        telemetry.addLine("D-Pad Right: Field-Relative (limited)");
+        telemetry.addLine("D-Pad Down:  Combined Goal Tracking ⭐BEST");
         telemetry.addLine("D-Pad Left:  Manual Mode");
         telemetry.addLine();
         telemetry.addLine("====== DRIVE CONTROLS ======");
         telemetry.addLine("Left Stick:  Drive (Y/X)");
-        telemetry.addLine("Right Stick X: Rotate Robot ⭐");
+        telemetry.addLine("Right Stick X: Rotate Robot");
         telemetry.addLine("Right Stick Y: Manual Turret (manual mode)");
         telemetry.update();
     }
@@ -122,7 +128,16 @@ public class TurretTest extends OpMode {
         hasUnwound = false;
         turretTargetPosition = motors.turret.getCurrentPosition();
 
+        // Initialize combined goal tracking variables
+        lastX = localization.getX();
+        lastY = localization.getY();
+        lastAngleToGoal = localization.getAngleToPoint(
+            RobotConstants.Field.GOAL_X,
+            RobotConstants.Field.GOAL_Y
+        );
+
         telemetry.addLine("🚀 Turret Test Started!");
+        telemetry.addLine("🎯 Combined Goal Tracking Active");
         telemetry.update();
     }
 
@@ -185,8 +200,9 @@ public class TurretTest extends OpMode {
                 break;
 
             case COMBINED:
-                updateCombined();
-                runTurretToPositionWithLimits();
+                // Combined Goal Tracking: handles BOTH position AND rotation
+                updateCombinedGoalTracking();
+                runTurretToPosition();  // Use unlimited rotation (no encoder limits)
                 break;
         }
 
@@ -317,15 +333,108 @@ public class TurretTest extends OpMode {
     }
 
     /**
-     * MODE 3: Combined
-     * Both counter-rotation compensation AND field-relative targeting
-     * This maintains goal tracking even as the robot rotates
+     * MODE 3: Combined Goal Tracking (RECOMMENDED)
+     * Tracks goal based on BOTH:
+     * 1. Robot X,Y position changes (when robot drives around)
+     * 2. Robot rotation changes (counter-rotation to compensate)
+     * 
+     * Uses UNLIMITED rotation with automatic wire unwinding
+     * This is the BEST mode for competition - turret always points at goal!
      */
-    private void updateCombined() {
-        // Simply recalculate field-relative angle each loop
-        // This naturally includes counter-rotation because we're always
-        // calculating the fresh angle to goal based on current position and heading
-        updateFieldRelative();
+    private void updateCombinedGoalTracking() {
+        // Get current robot state
+        double currentX = localization.getX();
+        double currentY = localization.getY();
+        double currentHeading = localization.getHeadingDegrees();
+
+        // Calculate current angle to goal (field-relative, in degrees)
+        double currentAngleToGoal = localization.getAngleToPoint(
+            RobotConstants.Field.GOAL_X,
+            RobotConstants.Field.GOAL_Y
+        );
+
+        // ========== HANDLE ROBOT ROTATION (Counter-Rotation Logic) ==========
+        double rawHeadingChange = currentHeading - lastHeading;
+
+        // Normalize heading change for boundary crossings (e.g., 359° to 1°)
+        double headingChange = rawHeadingChange;
+        if (rawHeadingChange > 180) {
+            headingChange = rawHeadingChange - 360;
+        } else if (rawHeadingChange < -180) {
+            headingChange = rawHeadingChange + 360;
+        }
+
+        // Track total robot rotation (for wire management)
+        totalRobotRotation += headingChange;
+
+        // Counter-rotate for robot heading change: if robot turns right (+), turret turns left (-)
+        turretTargetPosition -= headingChange * TICKS_PER_DEGREE;
+
+        // ========== HANDLE ROBOT POSITION CHANGE (X,Y Movement) ==========
+        // When robot moves, the angle to goal changes
+        // We need to adjust the turret to track this change
+        double angleToGoalChange = currentAngleToGoal - lastAngleToGoal;
+
+        // Normalize angle change for boundary crossings
+        if (angleToGoalChange > 180) {
+            angleToGoalChange -= 360;
+        } else if (angleToGoalChange < -180) {
+            angleToGoalChange += 360;
+        }
+
+        // Adjust turret for position-based angle change
+        // When angle to goal increases (goal moves "right" relative to robot), turret turns right (+)
+        turretTargetPosition += angleToGoalChange * TICKS_PER_DEGREE;
+
+        // ========== REVERSAL DETECTION (Smart Wire Unwinding) ==========
+        boolean directionChanged = (previousHeadingChange != 0) &&
+                                   (Math.signum(headingChange) != Math.signum(previousHeadingChange)) &&
+                                   (Math.abs(headingChange) > 1.0);
+
+        // Reset unwind flag when we complete another full rotation
+        if (Math.abs(totalRobotRotation) > 360) {
+            hasUnwound = false;
+        }
+
+        // If direction reversed and haven't unwound yet, unwind turret
+        if (directionChanged && !hasUnwound && Math.abs(lastTotalRotation) > 300) {
+            double currentTurretDegrees = turretTargetPosition / TICKS_PER_DEGREE;
+
+            if (Math.abs(currentTurretDegrees) > 20) {
+                if (currentTurretDegrees > 0) {
+                    turretTargetPosition -= 360.0 * TICKS_PER_DEGREE;
+                    telemetry.log().add("⚡ UNWIND: " + String.format("%.0f", currentTurretDegrees) + "° → " + 
+                                       String.format("%.0f", currentTurretDegrees - 360) + "°");
+                } else {
+                    turretTargetPosition += 360.0 * TICKS_PER_DEGREE;
+                    telemetry.log().add("⚡ UNWIND: " + String.format("%.0f", currentTurretDegrees) + "° → " + 
+                                       String.format("%.0f", currentTurretDegrees + 360) + "°");
+                }
+                hasUnwound = true;
+            }
+        }
+
+        // ========== WIRE LIMIT PROTECTION ==========
+        double currentTurretDegrees = turretTargetPosition / TICKS_PER_DEGREE;
+        if (currentTurretDegrees > WIRE_LIMIT + UNWIND_HYSTERESIS) {
+            turretTargetPosition -= 360.0 * TICKS_PER_DEGREE;
+            telemetry.log().add("⚠️ WIRE LIMIT: Auto-unwinding -360°");
+        } else if (currentTurretDegrees < -(WIRE_LIMIT + UNWIND_HYSTERESIS)) {
+            turretTargetPosition += 360.0 * TICKS_PER_DEGREE;
+            telemetry.log().add("⚠️ WIRE LIMIT: Auto-unwinding +360°");
+        }
+
+        // ========== UPDATE TRACKING VARIABLES ==========
+        lastHeading = currentHeading;
+        lastX = currentX;
+        lastY = currentY;
+        lastAngleToGoal = currentAngleToGoal;
+        lastTotalRotation = totalRobotRotation;
+
+        // Only update previous heading change if significant movement (prevents noise)
+        if (Math.abs(headingChange) > 0.5) {
+            previousHeadingChange = headingChange;
+        }
     }
 
     /**
@@ -471,6 +580,14 @@ public class TurretTest extends OpMode {
         turretTargetPosition = motors.turret.getCurrentPosition();
         previousError = 0;
         integral = 0;
+
+        // Reset combined goal tracking variables
+        lastX = localization.getX();
+        lastY = localization.getY();
+        lastAngleToGoal = localization.getAngleToPoint(
+            RobotConstants.Field.GOAL_X,
+            RobotConstants.Field.GOAL_Y
+        );
     }
 
     /**
@@ -522,6 +639,13 @@ public class TurretTest extends OpMode {
                 RobotConstants.Field.GOAL_Y
             );
             telemetry.addData("🎯 Angle to Goal", "%.1f°", angleToGoal);
+            
+            // Show distance to goal
+            double distanceToGoal = localization.getDistanceToPoint(
+                RobotConstants.Field.GOAL_X,
+                RobotConstants.Field.GOAL_Y
+            );
+            telemetry.addData("📏 Distance to Goal", "%.1f in", distanceToGoal);
         }
 
         telemetry.addLine();
@@ -553,7 +677,7 @@ public class TurretTest extends OpMode {
 
         telemetry.addLine();
         telemetry.addLine("====== LIMITS & SAFETY ======");
-        if (currentMode == TestMode.COUNTER_ROTATION) {
+        if (currentMode == TestMode.COUNTER_ROTATION || currentMode == TestMode.COMBINED) {
             telemetry.addLine("🔄 AUTO WIRE UNWINDING ACTIVE");
             telemetry.addData("Wire Limit", "±%.0f°", WIRE_LIMIT);
             telemetry.addData("Current Angle", "%.1f°", currentPosition / TICKS_PER_DEGREE);
@@ -573,9 +697,13 @@ public class TurretTest extends OpMode {
         } else if (currentMode == TestMode.FIELD_RELATIVE) {
             telemetry.addLine("🚗 DRIVE AROUND the field");
             telemetry.addLine("👀 Watch turret track the goal");
+            telemetry.addLine("⚠️ LIMITED to ±360° encoder range");
         } else if (currentMode == TestMode.COMBINED) {
-            telemetry.addLine("🔄 ROTATE and DRIVE together");
-            telemetry.addLine("👀 Turret maintains goal lock");
+            telemetry.addLine("⭐ COMBINED GOAL TRACKING (BEST MODE)");
+            telemetry.addLine("🚗 DRIVE anywhere on field");
+            telemetry.addLine("🔄 ROTATE freely");
+            telemetry.addLine("🎯 Turret ALWAYS points at goal!");
+            telemetry.addLine("✅ Unlimited rotation + auto wire unwinding");
         } else {
             telemetry.addLine("Use Right Stick Y for manual control");
         }

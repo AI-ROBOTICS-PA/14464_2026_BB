@@ -15,7 +15,7 @@ import org.firstinspires.ftc.teamcode.decode14464.systems.RobotSensors;
 import java.util.function.Supplier;
 
 @Configurable
-@TeleOp
+// @TeleOp  // DISABLED
 public class Decode_Teleop extends OpMode {
     private Follower follower;
     public static Pose startingPose; //See ExampleAuto to understand how to use this

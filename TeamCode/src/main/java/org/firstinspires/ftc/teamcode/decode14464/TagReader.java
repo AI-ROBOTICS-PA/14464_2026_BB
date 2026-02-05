@@ -16,7 +16,7 @@ import java.util.List;
  * - Press START to begin reading
  * - Watch telemetry for detected tags
  */
-@TeleOp(name = "Tag Reader", group = "Testing")
+// @TeleOp(name = "Tag Reader", group = "Testing")  // DISABLED
 public class TagReader extends OpMode {
 
     private LimelightManager limelightManager = new LimelightManager();

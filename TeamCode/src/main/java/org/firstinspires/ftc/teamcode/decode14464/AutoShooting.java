@@ -14,7 +14,7 @@ import org.firstinspires.ftc.teamcode.decode14464.systems.RobotServos;
 import org.firstinspires.ftc.teamcode.decode14464.systems.RobotSensors;
 
 @Configurable
-@TeleOp(name = "Auto Shooting", group = "Competition")
+// @TeleOp(name = "Auto Shooting", group = "Competition")  // DISABLED
 public class AutoShooting extends OpMode {
     // ========== ROBOT COMPONENTS ==========
     private Follower follower;

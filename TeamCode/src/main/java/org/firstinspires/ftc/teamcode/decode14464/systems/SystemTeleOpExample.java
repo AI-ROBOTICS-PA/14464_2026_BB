@@ -8,7 +8,7 @@ import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
  * Example TeleOp using the new modular RobotSystem
  * Demonstrates how to use all features in a clean, simple way
  */
-@TeleOp(name = "System TeleOp Example", group = "Systems")
+// @TeleOp(name = "System TeleOp Example", group = "Systems")  // DISABLED
 public class SystemTeleOpExample extends OpMode {
 
     private RobotSystem robot;
