@@ -177,6 +177,35 @@ public class AutoTurretSystem {
     }
 
     /**
+     * Recalibrate turret position - call this when manually adjusted to correct angle
+     * This tells the auto-tracking system "current position is the correct target"
+     * Use this to correct for any tracking errors during a match
+     */
+    public void recalibratePosition() {
+        if (motors != null && motors.turret != null) {
+            // Set target position to current actual position (zero out error)
+            turretTargetPosition = motors.turret.getCurrentPosition();
+        }
+        // Reset tracking references to current state
+        if (localization != null) {
+            lastHeading = localization.getHeadingDegrees();
+            lastX = localization.getX();
+            lastY = localization.getY();
+            lastAngleToGoal = localization.getAngleToPoint(
+                RobotConstants.Field.GOAL_X,
+                RobotConstants.Field.GOAL_Y
+            );
+        }
+        // Reset PID state
+        previousError = 0;
+        integral = 0;
+        // Reset rotation tracking
+        totalRobotRotation = 0;
+        lastTotalRotation = 0;
+        previousHeadingChange = 0;
+    }
+
+    /**
      * Toggle auto-tracking
      */
     public void toggle() {
