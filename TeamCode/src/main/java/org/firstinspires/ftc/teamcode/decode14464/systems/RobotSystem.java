@@ -198,8 +198,8 @@ public class RobotSystem {
      */
     public boolean isReadyToShoot() {
         boolean turretReady;
-        if (autoTurret != null && autoTurret.isEnabled()) {
-            // Auto-turret is active - check if on target
+        if (autoTurret != null && autoTurret.isAnyModeEnabled()) {
+            // Auto-turret is active (any mode) - check if on target
             turretReady = autoTurret.isOnTarget();
         } else {
             // Auto-turret disabled or not initialized - assume manually ready

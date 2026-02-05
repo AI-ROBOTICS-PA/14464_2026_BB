@@ -3,6 +3,7 @@ package org.firstinspires.ftc.teamcode.decode14464.systems;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
+import org.firstinspires.ftc.teamcode.decode14464.LimelightManager;
 
 /**
  * Turret Test TeleOp
@@ -15,16 +16,25 @@ import com.qualcomm.robotcore.hardware.DcMotor;
  * 4. Manual: Direct control
  *
  * Controls:
+ * ========
+ * GAMEPAD 1 (Driver):
  *   Left Stick Y  - Forward/Backward drive
  *   Left Stick X  - Strafe left/right
  *   Right Stick X - Robot rotation
+ *   Right Stick Y - Manual turret control (in manual mode only)
  *
  *   D-Pad Up      - Mode 1: Counter-Rotation Only
  *   D-Pad Right   - Mode 2: Field-Relative Only (limited ±360°)
  *   D-Pad Down    - Mode 3: Combined Goal Tracking (RECOMMENDED)
  *   D-Pad Left    - Manual Mode (disable auto-turret)
  *
- *   Right Stick Y - Manual turret control (in manual mode only)
+ * GAMEPAD 2 (Testing Features - All Toggleable):
+ *   A Button      - Toggle LIMELIGHT on/off
+ *   B Button      - Toggle AUTO-CALIBRATION on/off
+ *   X Button      - MANUAL CALIBRATION (one-shot recalibrate turret position)
+ *   Y Button      - LIMELIGHT CALIBRATION (one-shot AprilTag calibration)
+ *   Left Bumper   - Reset localization to (0,0,0)
+ *   Right Bumper  - Reset turret encoder to 0
  */
 @TeleOp(name = "Turret Test", group = "Test")
 public class TurretTest extends OpMode {
@@ -32,6 +42,26 @@ public class TurretTest extends OpMode {
     // Subsystems
     private LocalizationSystem localization;
     private RobotMotors motors;
+    private LimelightManager limelight;
+
+    // ========== FEATURE TOGGLES (for isolated testing) ==========
+    private boolean limelightEnabled = false;        // Toggle with GP2 A
+    private boolean autoCalibrationEnabled = false;  // Toggle with GP2 B
+    
+    // Calibration state
+    private static final double AUTO_CALIBRATE_COOLDOWN_MS = 2000;
+    private static final double AUTO_CALIBRATE_TX_THRESHOLD = 5.0;
+    private static final double AUTO_CALIBRATE_VELOCITY_THRESHOLD = 0.3;
+    private double lastAutoCalibrationTime = 0;
+    private String lastCalibrationStatus = "None";
+
+    // GP2 button state tracking
+    private boolean prevGP2A = false;
+    private boolean prevGP2B = false;
+    private boolean prevGP2X = false;
+    private boolean prevGP2Y = false;
+    private boolean prevGP2LeftBumper = false;
+    private boolean prevGP2RightBumper = false;
 
     // Test modes
     private enum TestMode {
@@ -97,21 +127,28 @@ public class TurretTest extends OpMode {
         localization = new LocalizationSystem();
         localization.initTeleOp(hardwareMap);
 
+        // Initialize Limelight (but starts disabled for isolated testing)
+        limelight = new LimelightManager();
+        limelight.init(hardwareMap);
+
         telemetry.addLine("✅ Turret Test Initialized");
         telemetry.addLine();
         telemetry.addLine("🎯 STARTING IN COMBINED GOAL TRACKING MODE");
         telemetry.addLine("   Drive AND rotate - turret tracks goal!");
         telemetry.addLine();
-        telemetry.addLine("====== MODE CONTROLS ======");
+        telemetry.addLine("====== GP1: MODE CONTROLS ======");
         telemetry.addLine("D-Pad Up:    Counter-Rotation Only");
         telemetry.addLine("D-Pad Right: Field-Relative (limited)");
         telemetry.addLine("D-Pad Down:  Combined Goal Tracking ⭐BEST");
         telemetry.addLine("D-Pad Left:  Manual Mode");
         telemetry.addLine();
-        telemetry.addLine("====== DRIVE CONTROLS ======");
-        telemetry.addLine("Left Stick:  Drive (Y/X)");
-        telemetry.addLine("Right Stick X: Rotate Robot");
-        telemetry.addLine("Right Stick Y: Manual Turret (manual mode)");
+        telemetry.addLine("====== GP2: TEST FEATURES ======");
+        telemetry.addLine("A: Toggle Limelight (OFF)");
+        telemetry.addLine("B: Toggle Auto-Calibrate (OFF)");
+        telemetry.addLine("X: Manual Recalibrate");
+        telemetry.addLine("Y: Limelight Calibrate");
+        telemetry.addLine("LB: Reset Localization");
+        telemetry.addLine("RB: Reset Turret Encoder");
         telemetry.update();
     }
 
@@ -180,6 +217,66 @@ public class TurretTest extends OpMode {
             -gamepad1.right_stick_x,
             false  // Robot-centric drive (set to true for field-centric)
         );
+
+        // ========== GP2: FEATURE TOGGLES ==========
+        // A Button: Toggle Limelight on/off
+        if (gamepad2.a && !prevGP2A) {
+            limelightEnabled = !limelightEnabled;
+            gamepad2.rumble(limelightEnabled ? 200 : 100);
+            telemetry.log().add(limelightEnabled ? "📷 Limelight ENABLED" : "📷 Limelight DISABLED");
+        }
+        prevGP2A = gamepad2.a;
+
+        // B Button: Toggle Auto-Calibration on/off
+        if (gamepad2.b && !prevGP2B) {
+            autoCalibrationEnabled = !autoCalibrationEnabled;
+            gamepad2.rumble(autoCalibrationEnabled ? 200 : 100);
+            telemetry.log().add(autoCalibrationEnabled ? "🔄 Auto-Calibration ENABLED" : "🔄 Auto-Calibration DISABLED");
+        }
+        prevGP2B = gamepad2.b;
+
+        // X Button: Manual Recalibrate (one-shot)
+        if (gamepad2.x && !prevGP2X) {
+            performManualRecalibration();
+        }
+        prevGP2X = gamepad2.x;
+
+        // Y Button: Limelight Calibration (one-shot)
+        if (gamepad2.y && !prevGP2Y) {
+            performLimelightCalibration(true);
+        }
+        prevGP2Y = gamepad2.y;
+
+        // Left Bumper: Reset localization to (0, 0, 0)
+        if (gamepad2.left_bumper && !prevGP2LeftBumper) {
+            localization.getFollower().setPose(new com.pedropathing.geometry.Pose(0, 0, 0));
+            resetTurretTracking();
+            gamepad2.rumble(300);
+            telemetry.log().add("📍 Localization RESET to (0, 0, 0°)");
+        }
+        prevGP2LeftBumper = gamepad2.left_bumper;
+
+        // Right Bumper: Reset turret encoder to 0
+        if (gamepad2.right_bumper && !prevGP2RightBumper) {
+            motors.turret.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+            motors.turret.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+            turretTargetPosition = 0;
+            previousError = 0;
+            integral = 0;
+            gamepad2.rumble(300);
+            telemetry.log().add("🎯 Turret encoder RESET to 0");
+        }
+        prevGP2RightBumper = gamepad2.right_bumper;
+
+        // ========== LIMELIGHT UPDATE (if enabled) ==========
+        if (limelightEnabled && limelight != null) {
+            limelight.update();
+            
+            // Auto-calibration (if enabled and conditions are met)
+            if (autoCalibrationEnabled) {
+                performAutoCalibration();
+            }
+        }
 
         // ========== TURRET CONTROL BASED ON MODE ==========
         switch (currentMode) {
@@ -604,6 +701,141 @@ public class TurretTest extends OpMode {
         return angle;
     }
 
+    // ========== CALIBRATION METHODS ==========
+
+    /**
+     * Manual Recalibration - sets current turret position as the "correct" reference
+     * Use when you've manually aimed the turret correctly and want to sync tracking
+     */
+    private void performManualRecalibration() {
+        // Set target to current position (zero out error)
+        turretTargetPosition = motors.turret.getCurrentPosition();
+        
+        // Reset PID state
+        previousError = 0;
+        integral = 0;
+        
+        // Reset tracking references to current state
+        lastHeading = localization.getHeadingDegrees();
+        lastX = localization.getX();
+        lastY = localization.getY();
+        lastAngleToGoal = localization.getAngleToPoint(
+            RobotConstants.Field.GOAL_X,
+            RobotConstants.Field.GOAL_Y
+        );
+        
+        lastCalibrationStatus = "Manual Recal OK";
+        gamepad2.rumble(300);
+        telemetry.log().add("✅ MANUAL RECALIBRATE: Position locked as reference!");
+    }
+
+    /**
+     * Limelight-based calibration using AprilTag detection
+     * Calibrates turret pointing based on tx (horizontal angle to target)
+     * @param isManual true if triggered by button, false if auto-triggered
+     */
+    private void performLimelightCalibration(boolean isManual) {
+        // Check if Limelight is available
+        if (limelight == null) {
+            if (isManual) {
+                lastCalibrationStatus = "FAILED: No Limelight";
+                telemetry.log().add("❌ Limelight not initialized!");
+            }
+            return;
+        }
+
+        if (!limelight.isConnected()) {
+            if (isManual) {
+                lastCalibrationStatus = "FAILED: Not connected";
+                telemetry.log().add("❌ Limelight not connected!");
+            }
+            return;
+        }
+
+        if (!limelight.hasValidTarget()) {
+            if (isManual) {
+                lastCalibrationStatus = "FAILED: No AprilTag";
+                telemetry.log().add("❌ No AprilTag visible!");
+            }
+            return;
+        }
+
+        // Get Limelight data
+        double tx = limelight.getTargetX(); // Horizontal angle to target
+        com.pedropathing.geometry.Pose limelightPose = limelight.getRobotPoseFromAprilTag();
+
+        // === TURRET CALIBRATION ===
+        // tx tells us how many degrees the turret is off from pointing at the target
+        // Positive tx = target is to the RIGHT, turret needs to turn RIGHT (positive)
+        if (Math.abs(tx) > 0.5) { // Only calibrate if there's meaningful offset
+            // Adjust turret target position based on tx error
+            turretTargetPosition += tx * TICKS_PER_DEGREE;
+            
+            // Reset PID to avoid integral windup after position jump
+            previousError = 0;
+            integral = 0;
+        }
+
+        // === LOCALIZATION CALIBRATION (if pose available) ===
+        if (limelightPose != null) {
+            localization.calibrateFromLimelight(limelightPose);
+            
+            // Update tracking references after position change
+            lastX = localization.getX();
+            lastY = localization.getY();
+            lastAngleToGoal = localization.getAngleToPoint(
+                RobotConstants.Field.GOAL_X,
+                RobotConstants.Field.GOAL_Y
+            );
+        }
+
+        // Update status
+        if (isManual) {
+            lastCalibrationStatus = String.format("Manual OK (tx=%.1f°)", tx);
+            gamepad2.rumble(300);
+            telemetry.log().add(String.format("✅ LIMELIGHT CALIBRATE: tx=%.1f°", tx));
+            if (limelightPose != null) {
+                telemetry.log().add(String.format("   Position: (%.1f, %.1f)", limelightPose.getX(), limelightPose.getY()));
+            }
+        } else {
+            lastAutoCalibrationTime = System.currentTimeMillis();
+            lastCalibrationStatus = String.format("Auto OK (tx=%.1f°)", tx);
+            gamepad2.rumble(50); // Light rumble for auto
+        }
+    }
+
+    /**
+     * Automatic calibration - triggers when conditions are optimal
+     * Only runs if autoCalibrationEnabled and limelightEnabled are true
+     */
+    private void performAutoCalibration() {
+        // Check cooldown
+        double currentTime = System.currentTimeMillis();
+        if (currentTime - lastAutoCalibrationTime < AUTO_CALIBRATE_COOLDOWN_MS) {
+            return;
+        }
+
+        // Check if Limelight has valid target
+        if (limelight == null || !limelight.hasValidTarget()) {
+            return;
+        }
+
+        // Check if robot is relatively stationary (using gamepad inputs as proxy)
+        double driveInput = Math.abs(gamepad1.left_stick_x) + Math.abs(gamepad1.left_stick_y) + Math.abs(gamepad1.right_stick_x);
+        if (driveInput > AUTO_CALIBRATE_VELOCITY_THRESHOLD) {
+            return; // Robot is moving
+        }
+
+        // Check tx error - only auto-calibrate if error is small enough
+        double tx = limelight.getTargetX();
+        if (Math.abs(tx) > AUTO_CALIBRATE_TX_THRESHOLD) {
+            return; // Error too large (might be wrong target)
+        }
+
+        // All conditions met
+        performLimelightCalibration(false);
+    }
+
     /**
      * Display comprehensive telemetry
      */
@@ -688,22 +920,53 @@ public class TurretTest extends OpMode {
             telemetry.addData("Limit Status", getLimitStatus(currentPosition));
         }
 
+        // ===== LIMELIGHT & CALIBRATION STATUS =====
         telemetry.addLine();
-        telemetry.addLine("====== INSTRUCTIONS ======");
+        telemetry.addLine("====== TEST FEATURES ======");
+        telemetry.addData("📷 Limelight", limelightEnabled ? "✓ ON" : "✗ OFF");
+        telemetry.addData("🔄 Auto-Calibrate", autoCalibrationEnabled ? "✓ ON" : "✗ OFF");
+        
+        if (limelightEnabled && limelight != null) {
+            telemetry.addLine();
+            telemetry.addLine("===== LIMELIGHT =====");
+            if (limelight.isConnected()) {
+                telemetry.addData("Status", "✓ Connected");
+                if (limelight.hasValidTarget()) {
+                    telemetry.addData("AprilTag", "✓ VISIBLE");
+                    telemetry.addData("tx (offset)", "%.1f°", limelight.getTargetX());
+                    telemetry.addData("ty (vertical)", "%.1f°", limelight.getTargetY());
+                    telemetry.addData("Tags Seen", limelight.getVisibleTagCount());
+                } else {
+                    telemetry.addData("AprilTag", "✗ Not visible");
+                }
+            } else {
+                telemetry.addData("Status", "✗ Not connected");
+            }
+            telemetry.addData("Last Calibration", lastCalibrationStatus);
+        }
+
+        telemetry.addLine();
+        telemetry.addLine("====== GP2 CONTROLS ======");
+        telemetry.addData("A", "Limelight: " + (limelightEnabled ? "ON" : "OFF"));
+        telemetry.addData("B", "Auto-Cal: " + (autoCalibrationEnabled ? "ON" : "OFF"));
+        telemetry.addData("X", "Manual Recalibrate");
+        telemetry.addData("Y", "Limelight Calibrate");
+        telemetry.addData("LB", "Reset Localization");
+        telemetry.addData("RB", "Reset Turret Encoder");
+
+        telemetry.addLine();
+        telemetry.addLine("====== GP1 INSTRUCTIONS ======");
         if (currentMode == TestMode.COUNTER_ROTATION) {
             telemetry.addLine("🔄 ROTATE ROBOT with Right Stick X");
             telemetry.addLine("👀 Watch turret rotate OPPOSITE direction");
-            telemetry.addLine("   to maintain field orientation");
         } else if (currentMode == TestMode.FIELD_RELATIVE) {
             telemetry.addLine("🚗 DRIVE AROUND the field");
             telemetry.addLine("👀 Watch turret track the goal");
             telemetry.addLine("⚠️ LIMITED to ±360° encoder range");
         } else if (currentMode == TestMode.COMBINED) {
-            telemetry.addLine("⭐ COMBINED GOAL TRACKING (BEST MODE)");
-            telemetry.addLine("🚗 DRIVE anywhere on field");
-            telemetry.addLine("🔄 ROTATE freely");
-            telemetry.addLine("🎯 Turret ALWAYS points at goal!");
-            telemetry.addLine("✅ Unlimited rotation + auto wire unwinding");
+            telemetry.addLine("⭐ COMBINED GOAL TRACKING (BEST)");
+            telemetry.addLine("🚗 DRIVE + 🔄 ROTATE freely");
+            telemetry.addLine("🎯 Turret tracks goal automatically");
         } else {
             telemetry.addLine("Use Right Stick Y for manual control");
         }
@@ -731,6 +994,9 @@ public class TurretTest extends OpMode {
     @Override
     public void stop() {
         motors.turret.setPower(0);
+        if (limelight != null) {
+            limelight.stop();
+        }
         telemetry.addLine("Turret Test Stopped");
         telemetry.update();
     }
