@@ -33,12 +33,19 @@ public class RobotConstants {
         // Encoder calibration: 3.01 ticks per degree (measured)
         public static final double TICKS_PER_DEGREE = 3.01;
         
-        // Encoder limits for goal-tracking mode (~150° each direction)
-        public static final int MAX_ENCODER_POSITION = 451;
-        public static final int MIN_ENCODER_POSITION = -451;
+        // ========== WIRE MANAGEMENT - MOVEMENT LIMITS ==========
+        // Maximum turret rotation from center (CONFIGURABLE for wire safety)
+        public static final double MAX_ROTATION_DEGREES = 135.0;  // ±135° = 270° total range
         
-        // Counter-rotation wire limits
-        public static final double WIRE_LIMIT_DEGREES = 360;
+        // Encoder limits (calculated from MAX_ROTATION_DEGREES)
+        public static final int MAX_ENCODER_POSITION = (int)(MAX_ROTATION_DEGREES * TICKS_PER_DEGREE);  // +135° = ~406 ticks
+        public static final int MIN_ENCODER_POSITION = (int)(-MAX_ROTATION_DEGREES * TICKS_PER_DEGREE); // -135° = ~-406 ticks
+        
+        // Soft limit zone (slow down before hard limit)
+        public static final double SOFT_LIMIT_DEGREES = 15.0;  // Start slowing 15° before limit
+        
+        // Counter-rotation wire limits (legacy - kept for compatibility)
+        public static final double WIRE_LIMIT_DEGREES = MAX_ROTATION_DEGREES;
         public static final double UNWIND_HYSTERESIS = 10;
 
         // AprilTag IDs

@@ -110,7 +110,7 @@ public class DecodeTeleOp extends OpMode {
     // ========== TURRET MOTOR CONTROL (Gamepad 2) ==========
     private static final double TURRET_MANUAL_POWER = 0.3; // Manual control power level
     private boolean turretManualOverride = false; // True when GP2 is actively controlling turret
-    private boolean autoTurretEnabled = false; // Toggle with GP2 X - START DISABLED for testing
+    private boolean autoTurretEnabled = true; // Toggle with GP2 X - ENABLED by default
     private boolean prevGP2X = false; // For auto-turret toggle button
     private boolean prevGP2LeftBumper = false; // For recalibrate button detection
     private boolean prevGP2RightBumper = false; // For Limelight calibration button
@@ -127,6 +127,7 @@ public class DecodeTeleOp extends OpMode {
 
     // ========== RUMBLE FEEDBACK ==========
     private boolean wasReadyToShoot = false; // Track state change for rumble
+    private boolean wasTurretAtLimit = false; // Track turret limit for warning rumble
 
     // ========== TELEMETRY PAGES ==========
     private int telemetryPage = 0; // 0=Essential, 1=Details, 2=Controls
@@ -172,12 +173,13 @@ public class DecodeTeleOp extends OpMode {
 
         // Auto-turret starts DISABLED - press GP2 X to enable after testing in TurretTest
         // This allows you to verify turret tracking works before enabling in competition code
-        robot.autoTurret.disableCombinedGoalTracking();
+        // Enable auto-turret tracking by default
+        robot.autoTurret.enableCombinedGoalTracking();
 
         telemetry.addLine("🚀 TeleOp Started!");
         telemetry.addLine("✅ Shooter Running at " + currentShooterVelocity + " (" + (isHighVelocityMode ? "HIGH" : "LOW") + ")");
         telemetry.addLine("✅ Hood at " + HOOD_POSITION_NAMES[currentHoodIndex]);
-        telemetry.addLine("⚠️ Auto-Turret: DISABLED (GP2 X to enable)");
+        telemetry.addLine("✅ Auto-Turret: ENABLED (GP2 X to toggle)");
         telemetry.addLine("ℹ️ Intake Motor: OFF (switch to INTAKE mode to enable)");
         telemetry.update();
     }
@@ -487,6 +489,15 @@ public class DecodeTeleOp extends OpMode {
             gamepad2.rumbleBlips(1);
         }
         wasReadyToShoot = isReadyToShoot;
+        
+        // ========== TURRET AT LIMIT WARNING ==========
+        // Warn driver when turret hits rotation limit (goal behind robot)
+        boolean turretAtLimit = autoTurretEnabled && robot.autoTurret.isAtLimit();
+        if (turretAtLimit && !wasTurretAtLimit) {
+            // Just hit limit - long rumble to warn driver to rotate robot
+            gamepad1.rumble(500); // 500ms warning
+        }
+        wasTurretAtLimit = turretAtLimit;
 
         // ========== TELEMETRY ==========
         updateTelemetry();
@@ -641,12 +652,19 @@ public class DecodeTeleOp extends OpMode {
             currentShooterVelocity,
             robot.shooting.isShooterAtTargetVelocity() ? "✓" : "⏳");
 
-        // Turret
+        // Turret (with launch-mode-only info and limit warning)
         String turretStatus;
         if (!autoTurretEnabled) {
             turretStatus = "MANUAL";
         } else if (turretManualOverride) {
             turretStatus = "OVERRIDE";
+        } else if (!robot.autoTurret.isMovementAllowed()) {
+            // In intake mode with launch-mode-only enabled - show tracking but not moving
+            double pendingMove = robot.autoTurret.getPendingMovementDegrees();
+            turretStatus = String.format("TRACKING (→%.0f° on LAUNCH)", pendingMove);
+        } else if (robot.autoTurret.isAtLimit()) {
+            // Goal is behind robot - turret at max rotation
+            turretStatus = "⚠️ AT LIMIT (rotate robot!)";
         } else {
             turretStatus = robot.autoTurret.isOnTarget() ? "ON TARGET" : "Tracking...";
         }

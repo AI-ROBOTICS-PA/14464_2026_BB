@@ -13,9 +13,16 @@ import com.qualcomm.robotcore.hardware.HardwareMap;
 public class AutoTurretSystem {
     private RobotMotors motors;
     private LocalizationSystem localization;
+    private AutoIntakeSystem autoIntake;  // Reference to check launch/intake mode
+    
     private boolean enabled = false;
     private boolean counterRotationEnabled = false;  // Counter-rotation mode
     private boolean combinedGoalTrackingEnabled = false;  // Combined: position + rotation tracking
+    
+    // ========== LAUNCH MODE ONLY CONTROL ==========
+    // When true, turret tracks target but only MOVES when in launch mode
+    // This prevents wire tangling during intake (turret stays still)
+    private boolean launchModeOnly = true;  // DEFAULT: Only move in launch mode
 
     private double previousError = 0;
     private double integral = 0;
@@ -34,7 +41,7 @@ public class AutoTurretSystem {
     private double lastAngleToGoal = 0;           // Last calculated angle to goal
 
     // Local constants (use RobotConstants.Turret for shared values)
-    private static final double SOFT_LIMIT_ZONE = 50;         // Slow down within 50 ticks of limit
+    private static final double SOFT_LIMIT_ZONE = RobotConstants.Turret.SOFT_LIMIT_DEGREES * RobotConstants.Turret.TICKS_PER_DEGREE;
     private static final double POSITION_TOLERANCE = 12;      // ~4° accuracy
     
     // Shorthand references to RobotConstants.Turret for cleaner code
@@ -52,8 +59,18 @@ public class AutoTurretSystem {
      * Initialize turret system with centralized motors
      */
     public void init(HardwareMap hardwareMap, LocalizationSystem localizationSystem, RobotMotors motors) {
+        init(hardwareMap, localizationSystem, motors, null);
+    }
+    
+    /**
+     * Initialize turret system with AutoIntakeSystem reference
+     * This allows turret to only move in LAUNCH mode (wire management)
+     */
+    public void init(HardwareMap hardwareMap, LocalizationSystem localizationSystem, 
+                     RobotMotors motors, AutoIntakeSystem autoIntake) {
         this.motors = motors;
         this.localization = localizationSystem;
+        this.autoIntake = autoIntake;
 
         // Ensure turret motor is properly initialized (encoder reset done in RobotMotors.init())
         if (motors != null && motors.turret != null) {
@@ -63,6 +80,40 @@ public class AutoTurretSystem {
 
         // Initialize counter-rotation tracking
         resetCounterRotationTracking();
+    }
+    
+    /**
+     * Set reference to AutoIntakeSystem (for launch mode checking)
+     * Call this after init if autoIntake wasn't available during init
+     */
+    public void setAutoIntakeSystem(AutoIntakeSystem autoIntake) {
+        this.autoIntake = autoIntake;
+    }
+    
+    /**
+     * Enable/disable launch-mode-only movement
+     * When true: Turret tracks target but only MOVES when in launch mode
+     * When false: Turret moves regardless of intake/launch mode
+     */
+    public void setLaunchModeOnly(boolean launchModeOnly) {
+        this.launchModeOnly = launchModeOnly;
+    }
+    
+    /**
+     * Check if launch-mode-only is enabled
+     */
+    public boolean isLaunchModeOnly() {
+        return launchModeOnly;
+    }
+    
+    /**
+     * Check if turret movement is currently allowed
+     * @return true if movement allowed (launch mode or launchModeOnly disabled)
+     */
+    public boolean isMovementAllowed() {
+        if (!launchModeOnly) return true;  // Always allowed if feature disabled
+        if (autoIntake == null) return true;  // Allow if no intake system reference
+        return !autoIntake.isIntakeMode();  // Only allow in launch mode
     }
 
     /**
@@ -440,6 +491,18 @@ public class AutoTurretSystem {
     }
 
     /**
+     * Check if turret is AT its rotation limit (goal is behind robot)
+     * This means the turret can't reach the goal angle and is at max/min position
+     */
+    public boolean isAtLimit() {
+        if (motors == null || motors.turret == null) return false;
+        double currentDegrees = motors.turret.getCurrentPosition() / TICKS_PER_DEGREE;
+        double maxRotation = RobotConstants.Turret.MAX_ROTATION_DEGREES;
+        // Check if at either limit (within 5 degrees)
+        return Math.abs(Math.abs(currentDegrees) - maxRotation) < 5.0;
+    }
+    
+    /**
      * Check if turret is near rotation limits
      */
     public boolean isNearLimits() {
@@ -497,12 +560,15 @@ public class AutoTurretSystem {
 
     /**
      * Update combined goal tracking mode
-     * This is the MAIN tracking algorithm that handles both:
-     * 1. Robot POSITION changes (X,Y movement) - recalculates angle to goal
-     * 2. Robot ROTATION changes - counter-rotates turret to compensate
      * 
-     * The turret will ALWAYS point at the goal regardless of robot movement or rotation
-     * Uses unlimited rotation with automatic wire unwinding
+     * WIRE-SAFE IMPLEMENTATION:
+     * Instead of accumulating rotation (which fails with hard limits), this calculates
+     * the DIRECT angle to goal and clamps it within the configured rotation limits.
+     * 
+     * This means:
+     * - Robot can spin unlimited times (360° x N) and turret always finds the goal
+     * - Turret never exceeds ±MAX_ROTATION_DEGREES (configurable, default ±135° = 270° total)
+     * - If goal is directly behind robot (outside ±135°), turret goes to closest limit
      */
     private void updateCombinedGoalTracking() {
         // Get current robot state
@@ -510,91 +576,43 @@ public class AutoTurretSystem {
         double currentY = localization.getY();
         double currentHeading = localization.getHeadingDegrees();
 
-        // Calculate current angle to goal (field-relative, in degrees)
-        double currentAngleToGoal = localization.getAngleToPoint(
+        // Calculate angle to goal (field-relative, in degrees)
+        double fieldAngleToGoal = localization.getAngleToPoint(
             RobotConstants.Field.GOAL_X,
             RobotConstants.Field.GOAL_Y
         );
 
-        // ========== HANDLE ROBOT ROTATION (Counter-Rotation Logic) ==========
-        double rawHeadingChange = currentHeading - lastHeading;
-
-        // Normalize heading change for boundary crossings (e.g., 359° to 1°)
-        double headingChange = rawHeadingChange;
-        if (rawHeadingChange > 180) {
-            headingChange = rawHeadingChange - 360;
-        } else if (rawHeadingChange < -180) {
-            headingChange = rawHeadingChange + 360;
+        // ========== CALCULATE TURRET ANGLE RELATIVE TO ROBOT ==========
+        // This is the angle the turret needs to point, relative to robot's heading
+        double turretAngleNeeded = fieldAngleToGoal - currentHeading;
+        
+        // Normalize to -180 to +180
+        turretAngleNeeded = normalizeAngle(turretAngleNeeded);
+        
+        // ========== APPLY ROTATION LIMITS (WIRE SAFETY) ==========
+        // Clamp to configured limits (default ±135°)
+        double maxRotation = RobotConstants.Turret.MAX_ROTATION_DEGREES;
+        
+        if (turretAngleNeeded > maxRotation) {
+            // Goal is too far right - go to right limit
+            turretAngleNeeded = maxRotation;
+            // Mark as "at limit" for telemetry
+        } else if (turretAngleNeeded < -maxRotation) {
+            // Goal is too far left - go to left limit  
+            turretAngleNeeded = -maxRotation;
         }
-
-        // Track total robot rotation (for wire management)
-        totalRobotRotation += headingChange;
-
-        // Counter-rotate for robot heading change: if robot turns right (+), turret turns left (-)
-        turretTargetPosition -= headingChange * TICKS_PER_DEGREE;
-
-        // ========== HANDLE ROBOT POSITION CHANGE (X,Y Movement) ==========
-        // When robot moves, the angle to goal changes
-        // We need to adjust the turret to track this change
-        double angleToGoalChange = currentAngleToGoal - lastAngleToGoal;
-
-        // Normalize angle change for boundary crossings
-        if (angleToGoalChange > 180) {
-            angleToGoalChange -= 360;
-        } else if (angleToGoalChange < -180) {
-            angleToGoalChange += 360;
-        }
-
-        // Adjust turret for position-based angle change
-        // When angle to goal increases (goal moves "right" relative to robot), turret turns right (+)
-        turretTargetPosition += angleToGoalChange * TICKS_PER_DEGREE;
-
-        // ========== REVERSAL DETECTION (From Counter-Rotation) ==========
-        boolean directionChanged = (previousHeadingChange != 0) &&
-                                   (Math.signum(headingChange) != Math.signum(previousHeadingChange)) &&
-                                   (Math.abs(headingChange) > 1.0);
-
-        // Reset unwind flag when we complete another full rotation
-        if (Math.abs(totalRobotRotation) > 360) {
-            hasUnwound = false;
-        }
-
-        // If direction reversed and haven't unwound yet, unwind turret
-        if (directionChanged && !hasUnwound && Math.abs(lastTotalRotation) > 300) {
-            double currentTurretDegrees = turretTargetPosition / TICKS_PER_DEGREE;
-
-            if (Math.abs(currentTurretDegrees) > 20) {
-                if (currentTurretDegrees > 0) {
-                    turretTargetPosition -= 360.0 * TICKS_PER_DEGREE;
-                } else {
-                    turretTargetPosition += 360.0 * TICKS_PER_DEGREE;
-                }
-                hasUnwound = true;
-            }
-        }
-
-        // ========== WIRE LIMIT PROTECTION ==========
-        double currentTurretDegrees = turretTargetPosition / TICKS_PER_DEGREE;
-        if (currentTurretDegrees > WIRE_LIMIT + UNWIND_HYSTERESIS) {
-            turretTargetPosition -= 360.0 * TICKS_PER_DEGREE;
-        } else if (currentTurretDegrees < -(WIRE_LIMIT + UNWIND_HYSTERESIS)) {
-            turretTargetPosition += 360.0 * TICKS_PER_DEGREE;
-        }
-
-        // ========== RUN PID TO TARGET POSITION ==========
-        runTurretToPosition();
-
-        // ========== UPDATE TRACKING VARIABLES ==========
+        
+        // Convert angle to encoder ticks
+        turretTargetPosition = turretAngleNeeded * TICKS_PER_DEGREE;
+        
+        // Track for telemetry
+        lastAngleToGoal = fieldAngleToGoal;
         lastHeading = currentHeading;
         lastX = currentX;
         lastY = currentY;
-        lastAngleToGoal = currentAngleToGoal;
-        lastTotalRotation = totalRobotRotation;
-
-        // Only update previous heading change if significant movement (prevents noise)
-        if (Math.abs(headingChange) > 0.5) {
-            previousHeadingChange = headingChange;
-        }
+        
+        // ========== RUN PID TO TARGET POSITION ==========
+        runTurretToPosition();
     }
 
     // ==================== COUNTER-ROTATION MODE ====================
@@ -672,6 +690,16 @@ public class AutoTurretSystem {
     private void runTurretToPosition() {
         double currentPosition = motors.turret.getCurrentPosition();
         double error = turretTargetPosition - currentPosition;
+
+        // ========== LAUNCH MODE ONLY CHECK ==========
+        // If launchModeOnly is enabled and we're in intake mode, don't move motor
+        // But tracking calculation above already updated turretTargetPosition
+        if (!isMovementAllowed()) {
+            motors.turret.setPower(0);
+            // Keep PID state for smooth transition when switching to launch mode
+            previousError = error;
+            return;
+        }
 
         // Check if at target
         if (Math.abs(error) <= POSITION_TOLERANCE) {
@@ -788,6 +816,45 @@ public class AutoTurretSystem {
      */
     public boolean isAnyModeEnabled() {
         return enabled || counterRotationEnabled || combinedGoalTrackingEnabled;
+    }
+    
+    /**
+     * Get tracking status for telemetry
+     * Shows mode, tracking vs moving state, target angle
+     */
+    public String getTrackingStatus() {
+        if (!isAnyModeEnabled()) return "DISABLED";
+        
+        String mode = getCurrentMode();
+        boolean moving = isMovementAllowed();
+        double targetDeg = getTurretTargetDegrees();
+        double currentDeg = getTurretEncoderPosition() / TICKS_PER_DEGREE;
+        double error = targetDeg - currentDeg;
+        
+        if (moving) {
+            return String.format("%s: MOVING (err=%.1f°)", mode, error);
+        } else {
+            return String.format("%s: TRACKING (target=%.1f°, wait for LAUNCH)", mode, targetDeg);
+        }
+    }
+    
+    /**
+     * Get pending angle that turret will move to when switching to launch mode
+     * Useful for telemetry to show "turret will snap to X° when entering LAUNCH"
+     */
+    public double getPendingTargetDegrees() {
+        return turretTargetPosition / TICKS_PER_DEGREE;
+    }
+    
+    /**
+     * Get error between current position and tracked target (degrees)
+     * This shows how far turret needs to move when switching to launch mode
+     */
+    public double getPendingMovementDegrees() {
+        if (motors == null || motors.turret == null) return 0;
+        double currentDeg = motors.turret.getCurrentPosition() / TICKS_PER_DEGREE;
+        double targetDeg = turretTargetPosition / TICKS_PER_DEGREE;
+        return targetDeg - currentDeg;
     }
 
 }

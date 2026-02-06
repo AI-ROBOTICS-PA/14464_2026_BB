@@ -52,9 +52,9 @@ public class RobotSystem {
         led = new LEDSystem();
         led.init(hardwareMap, servos);
 
-        // 4. Auto-Turret (depends on localization, motors)
+        // 4. Auto-Turret (depends on localization, motors, autoIntake for launch-mode-only)
         autoTurret = new AutoTurretSystem();
-        autoTurret.init(hardwareMap, localization, motors);
+        autoTurret.init(hardwareMap, localization, motors, autoIntake);
 
         // 5. Auto-Hood (depends on localization, servos)
         autoHood = new AutoHoodSystem();
@@ -104,9 +104,9 @@ public class RobotSystem {
         led = new LEDSystem();
         led.init(hardwareMap, servos);
 
-        // 4. Auto-Turret (depends on localization, motors)
+        // 4. Auto-Turret (depends on localization, motors, autoIntake for launch-mode-only)
         autoTurret = new AutoTurretSystem();
-        autoTurret.init(hardwareMap, localization, motors);
+        autoTurret.init(hardwareMap, localization, motors, autoIntake);
 
         // 5. Auto-Hood (depends on localization, servos)
         autoHood = new AutoHoodSystem();
