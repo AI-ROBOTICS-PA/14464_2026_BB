@@ -524,6 +524,45 @@ public class AutoTurretSystem {
         motors.turret.setTargetPosition(0);
         motors.turret.setPower(0.3);
     }
+    
+    /**
+     * Move turret to a specific angle (degrees from center)
+     * Use this at start of autonomous to pre-position turret
+     * 
+     * @param angleDegrees Target angle in degrees (+ = right, - = left)
+     *                     Will be clamped to ±MAX_ROTATION_DEGREES
+     */
+    public void moveToAngle(double angleDegrees) {
+        if (motors == null || motors.turret == null) return;
+        
+        // Clamp to safe limits
+        double maxRotation = RobotConstants.Turret.MAX_ROTATION_DEGREES;
+        angleDegrees = Math.max(-maxRotation, Math.min(maxRotation, angleDegrees));
+        
+        // Convert to encoder ticks
+        int targetTicks = (int)(angleDegrees * TICKS_PER_DEGREE);
+        
+        // Move to position
+        motors.turret.setMode(DcMotor.RunMode.RUN_TO_POSITION);
+        motors.turret.setTargetPosition(targetTicks);
+        motors.turret.setPower(0.5); // Faster than reset for auto
+    }
+    
+    /**
+     * Check if turret has reached target position (for moveToAngle)
+     */
+    public boolean isAtTargetPosition() {
+        if (motors == null || motors.turret == null) return true;
+        return !motors.turret.isBusy();
+    }
+    
+    /**
+     * Get current turret position in degrees (from encoder)
+     */
+    public double getCurrentAngleDegrees() {
+        if (motors == null || motors.turret == null) return 0;
+        return motors.turret.getCurrentPosition() / TICKS_PER_DEGREE;
+    }
 
     /**
      * Check if turret reset is complete
@@ -534,7 +573,8 @@ public class AutoTurretSystem {
     }
 
     /**
-     * Resume normal operation after reset
+     * Resume normal operation after reset or moveToAngle
+     * Call this before enabling auto-tracking
      */
     public void resumeFromReset() {
         if (motors == null || motors.turret == null) return;

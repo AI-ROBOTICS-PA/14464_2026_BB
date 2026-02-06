@@ -65,10 +65,19 @@ public class Auto_BlueFar extends OpMode {
     // ========== ALLIANCE ==========
     private static final LimelightManager.Alliance ALLIANCE = LimelightManager.Alliance.BLUE;
     
+    // ========== INITIAL TURRET ANGLE (TUNABLE) ==========
+    // Angle turret moves to at start of auto (degrees from center)
+    // TUNE THIS VALUE in RobotConstants.Auto.BLUE_FAR_INITIAL_TURRET_ANGLE
+    private static final double INITIAL_TURRET_ANGLE = RobotConstants.Auto.BLUE_FAR_INITIAL_TURRET_ANGLE;
+    
     // ========== STATE MACHINE ==========
     private enum AutoState {
-        // Initial shooting sequence
+        // Initial setup
         INIT,
+        MOVE_TURRET_INITIAL,      // Move turret to initial angle
+        WAIT_TURRET_INITIAL,      // Wait for turret to reach position
+        
+        // Initial shooting sequence
         WAIT_SHOOTER_READY_1,
         WAIT_TURRET_AIM_1,
         SHOOT_SEQUENCE_1,
@@ -167,10 +176,8 @@ public class Auto_BlueFar extends OpMode {
             robot.led.setLaunchModeColor();
         }
         
-        // Enable auto-turret (Combined Goal Tracking) - runs throughout entire auto
-        if (robot.autoTurret != null) {
-            robot.autoTurret.enableCombinedGoalTracking();
-        }
+        // NOTE: Auto-turret will be enabled AFTER initial turret positioning in state machine
+        // This allows us to pre-position the turret to INITIAL_TURRET_ANGLE first
         
         // Start flywheel immediately - runs continuously throughout auto
         robot.shooting.startShooter(SHOOTER_VELOCITY);
@@ -217,13 +224,37 @@ public class Auto_BlueFar extends OpMode {
         
         switch (currentState) {
             
-            // ==================== INITIAL SHOOTING ====================
+            // ==================== INITIAL SETUP ====================
             
             case INIT:
-                // Flywheel and auto-turret already started in start()
-                currentState = AutoState.WAIT_SHOOTER_READY_1;
+                // Move turret to initial position for first shot
+                // This gives us a head start while flywheel spins up
+                robot.autoTurret.moveToAngle(INITIAL_TURRET_ANGLE);
+                currentState = AutoState.MOVE_TURRET_INITIAL;
                 actionTimer.resetTimer();
                 break;
+                
+            case MOVE_TURRET_INITIAL:
+                // Wait for turret to reach initial position (or timeout)
+                if (robot.autoTurret.isAtTargetPosition() || 
+                    elapsed > RobotConstants.Auto.INITIAL_TURRET_MOVE_TIMEOUT) {
+                    // Resume normal operation and enable auto-tracking
+                    robot.autoTurret.resumeFromReset();
+                    robot.autoTurret.enableCombinedGoalTracking();
+                    currentState = AutoState.WAIT_TURRET_INITIAL;
+                    actionTimer.resetTimer();
+                }
+                break;
+                
+            case WAIT_TURRET_INITIAL:
+                // Small delay to let auto-tracking stabilize
+                if (elapsed > 0.2) {  // 200ms settling time
+                    currentState = AutoState.WAIT_SHOOTER_READY_1;
+                    actionTimer.resetTimer();
+                }
+                break;
+            
+            // ==================== INITIAL SHOOTING ====================
                 
             case WAIT_SHOOTER_READY_1:
                 // Wait for shooter to reach target velocity
@@ -363,12 +394,12 @@ public class Auto_BlueFar extends OpMode {
             START_POSE.getX(), START_POSE.getY(), Math.toDegrees(START_POSE.getHeading()));
         telemetry.addLine();
         telemetry.addLine("─── CONFIGURATION ───");
+        telemetry.addData("Initial Turret", "%.1f° (TUNABLE in RobotConstants)", INITIAL_TURRET_ANGLE);
         telemetry.addData("Flywheel", "HIGH @ %.0f ticks/sec", SHOOTER_VELOCITY);
         telemetry.addData("Hood", "LONG RANGE @ %.2f", HOOD_POSITION);
         telemetry.addData("Balls/Cycle", RobotConstants.Auto.BALLS_PER_CYCLE);
         telemetry.addLine();
-        telemetry.addData("Sequence", "Shoot → Intake @ (%.0f,%.0f) → Shoot", 
-            INTAKE_POSE.getX(), INTAKE_POSE.getY());
+        telemetry.addData("Sequence", "Turret→%.0f° → Shoot → Intake → Shoot", INITIAL_TURRET_ANGLE);
         telemetry.addLine();
         telemetry.addLine(">>> READY TO START <<<");
         telemetry.update();
@@ -387,9 +418,18 @@ public class Auto_BlueFar extends OpMode {
         
         // Auto-turret status
         if (robot.autoTurret != null) {
-            telemetry.addData("Turret", "%s %s",
-                robot.autoTurret.isAnyModeEnabled() ? "TRACKING" : "OFF",
-                robot.autoTurret.isOnTarget() ? "✓" : "⏳");
+            String turretStatus;
+            if (currentState == AutoState.MOVE_TURRET_INITIAL || currentState == AutoState.WAIT_TURRET_INITIAL) {
+                turretStatus = String.format("MOVING to %.0f° (now: %.0f°)", 
+                    INITIAL_TURRET_ANGLE, robot.autoTurret.getCurrentAngleDegrees());
+            } else if (robot.autoTurret.isAnyModeEnabled()) {
+                turretStatus = String.format("%.0f° %s", 
+                    robot.autoTurret.getCurrentAngleDegrees(),
+                    robot.autoTurret.isOnTarget() ? "✓ ON TARGET" : "⏳ tracking");
+            } else {
+                turretStatus = "OFF";
+            }
+            telemetry.addData("Turret", turretStatus);
         }
         
         // Shooter status

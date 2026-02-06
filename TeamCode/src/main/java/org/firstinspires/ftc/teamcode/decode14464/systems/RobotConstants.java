@@ -197,6 +197,18 @@ public class RobotConstants {
         
         // Number of balls
         public static final int BALLS_PER_CYCLE = 3;                // Balls loaded/shot per cycle
+        
+        // ========== INITIAL TURRET POSITION (TUNABLE) ==========
+        // Turret angle to move to at start of autonomous (degrees from center)
+        // Positive = right, Negative = left
+        // TUNE THIS: Adjust until first shot hits the goal reliably
+        public static final double BLUE_FAR_INITIAL_TURRET_ANGLE = 45.0;   // Blue far zone
+        public static final double RED_FAR_INITIAL_TURRET_ANGLE = -45.0;   // Red far zone (mirror)
+        public static final double BLUE_NEAR_INITIAL_TURRET_ANGLE = 30.0;  // Blue near zone
+        public static final double RED_NEAR_INITIAL_TURRET_ANGLE = -30.0;  // Red near zone (mirror)
+        
+        // Time to wait for turret to reach initial position
+        public static final double INITIAL_TURRET_MOVE_TIMEOUT = 1.0;      // seconds
     }
 }
 

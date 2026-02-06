@@ -31,6 +31,7 @@ import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
  * - D-Pad Up/Down: Hood fine control (+/- 0.02)
  * - Left Bumper: Manual RECALIBRATE (locks current position as correct reference)
  * - Right Bumper: LIMELIGHT CALIBRATE (uses AprilTag for precision calibration)
+ * - Left Trigger (HOLD): POSITION LOCK - Resists being pushed by other robots
  *
  * Auto-Turret Behavior:
  * =====================
@@ -129,6 +130,11 @@ public class DecodeTeleOp extends OpMode {
     private boolean wasReadyToShoot = false; // Track state change for rumble
     private boolean wasTurretAtLimit = false; // Track turret limit for warning rumble
 
+    // ========== POSITION LOCK (GP2 Left Trigger HOLD) ==========
+    // Locks robot position to resist being pushed by other robots during shooting
+    private boolean positionLockEnabled = false;
+    private com.pedropathing.geometry.Pose lockedPose = null;
+
     // ========== TELEMETRY PAGES ==========
     private int telemetryPage = 0; // 0=Essential, 1=Details, 2=Controls
     private static final int TELEMETRY_PAGE_COUNT = 3;
@@ -189,13 +195,41 @@ public class DecodeTeleOp extends OpMode {
         // ========== UPDATE ALL SYSTEMS ==========
         robot.updateAll();
 
+        // ========== POSITION LOCK (GP2 Left Trigger HOLD) ==========
+        // Hold Left Trigger to lock position - resists being pushed by other robots
+        boolean wasLocked = positionLockEnabled;
+        positionLockEnabled = gamepad2.left_trigger > 0.5;
+        
+        if (positionLockEnabled && !wasLocked) {
+            // ENABLE: Just started locking - capture position and break following
+            lockedPose = robot.localization.getFollower().getPose();
+            robot.localization.getFollower().breakFollowing();
+            gamepad2.rumble(100); // Short rumble to confirm lock
+        } else if (!positionLockEnabled && wasLocked) {
+            // DISABLE: Just released lock - resume normal teleop drive
+            robot.localization.getFollower().startTeleopDrive();
+            lockedPose = null;
+        }
+        
+        // Update position lock if currently enabled
+        if (positionLockEnabled && lockedPose != null) {
+            // Continuously command robot to hold position
+            robot.localization.getFollower().holdPoint(
+                new com.pedropathing.geometry.BezierPoint(lockedPose),
+                Math.toRadians(5) // 5 degree heading tolerance
+            );
+        }
+
         // ========== DRIVE CONTROL ==========
-        robot.localization.getFollower().setTeleOpDrive(
-            -gamepad1.left_stick_y,
-            -gamepad1.left_stick_x,
-            -gamepad1.right_stick_x,
-            true // Field-centric control
-        );
+        // Disable normal drive when position lock is active
+        if (!positionLockEnabled) {
+            robot.localization.getFollower().setTeleOpDrive(
+                -gamepad1.left_stick_y,
+                -gamepad1.left_stick_x,
+                -gamepad1.right_stick_x,
+                true // Field-centric control
+            );
+        }
 
         // ========== MODE SWITCHING ==========
         // A/Cross: Toggle between Intake and Launch modes
@@ -635,6 +669,11 @@ public class DecodeTeleOp extends OpMode {
      * Page 0: Essential info - what drivers need during match
      */
     private void displayEssentialPage() {
+        // Position Lock Status (important for shooting!)
+        if (positionLockEnabled) {
+            telemetry.addLine("🔒 POSITION LOCKED (release GP2 L-Trigger to move)");
+        }
+        
         // Turret Slot
         telemetry.addData("Balls Loaded", robot.autoIntake.getCurrentIndex() + 1);
 
@@ -770,6 +809,7 @@ public class DecodeTeleOp extends OpMode {
         telemetry.addData("A/×", "Alliance: " + allianceStr);
         telemetry.addData("X/□", autoTurretEnabled ? "Turret: ON" : "Turret: OFF");
         telemetry.addData("Y/△", autoCalibrationEnabled ? "AutoCal: ON" : "AutoCal: OFF");
+        telemetry.addData("L Trigger", "HOLD = Position Lock 🔒");
         telemetry.addData("L Stick Y", "Intake Control");
         telemetry.addData("R Stick X", "Turret Manual");
         telemetry.addData("D-Pad U/D", "Hood Fine");

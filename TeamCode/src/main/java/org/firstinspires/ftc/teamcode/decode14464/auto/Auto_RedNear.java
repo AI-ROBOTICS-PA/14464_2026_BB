@@ -65,10 +65,17 @@ public class Auto_RedNear extends OpMode {
     // ========== ALLIANCE ==========
     private static final LimelightManager.Alliance ALLIANCE = LimelightManager.Alliance.RED;
     
+    // ========== INITIAL TURRET ANGLE (TUNABLE) ==========
+    private static final double INITIAL_TURRET_ANGLE = RobotConstants.Auto.RED_NEAR_INITIAL_TURRET_ANGLE;
+    
     // ========== STATE MACHINE ==========
     private enum AutoState {
-        // Initial shooting sequence
+        // Initial setup
         INIT,
+        MOVE_TURRET_INITIAL,
+        WAIT_TURRET_INITIAL,
+        
+        // Initial shooting sequence
         WAIT_SHOOTER_READY_1,
         WAIT_TURRET_AIM_1,
         SHOOT_SEQUENCE_1,
@@ -167,10 +174,7 @@ public class Auto_RedNear extends OpMode {
             robot.led.setLaunchModeColor();
         }
         
-        // Enable auto-turret (Combined Goal Tracking) - runs throughout entire auto
-        if (robot.autoTurret != null) {
-            robot.autoTurret.enableCombinedGoalTracking();
-        }
+        // NOTE: Auto-turret enabled AFTER initial turret positioning in state machine
         
         // Start flywheel immediately - runs continuously throughout auto
         robot.shooting.startShooter(SHOOTER_VELOCITY);
@@ -220,9 +224,26 @@ public class Auto_RedNear extends OpMode {
             // ==================== INITIAL SHOOTING ====================
             
             case INIT:
-                // Flywheel and auto-turret already started in start()
-                currentState = AutoState.WAIT_SHOOTER_READY_1;
+                robot.autoTurret.moveToAngle(INITIAL_TURRET_ANGLE);
+                currentState = AutoState.MOVE_TURRET_INITIAL;
                 actionTimer.resetTimer();
+                break;
+                
+            case MOVE_TURRET_INITIAL:
+                if (robot.autoTurret.isAtTargetPosition() || 
+                    elapsed > RobotConstants.Auto.INITIAL_TURRET_MOVE_TIMEOUT) {
+                    robot.autoTurret.resumeFromReset();
+                    robot.autoTurret.enableCombinedGoalTracking();
+                    currentState = AutoState.WAIT_TURRET_INITIAL;
+                    actionTimer.resetTimer();
+                }
+                break;
+                
+            case WAIT_TURRET_INITIAL:
+                if (elapsed > 0.2) {
+                    currentState = AutoState.WAIT_SHOOTER_READY_1;
+                    actionTimer.resetTimer();
+                }
                 break;
                 
             case WAIT_SHOOTER_READY_1:
