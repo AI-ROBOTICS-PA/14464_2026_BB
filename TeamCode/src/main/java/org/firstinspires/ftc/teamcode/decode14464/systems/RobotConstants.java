@@ -172,5 +172,24 @@ public class RobotConstants {
         public static final long BALL_FEED_INTERVAL_MS = 300;
         public static final long SHOOTER_SPINUP_MS = 500;
     }
+    
+    // ==================== AUTONOMOUS TIMING ====================
+    public static final class Auto {
+        // Shooter/turret timing
+        public static final double SHOOTER_SPINUP_SECONDS = 1.5;    // Time to spin up flywheel
+        public static final double TURRET_AIM_TIMEOUT = 2.0;        // Max time to wait for turret to aim
+        
+        // Shooting sequence
+        public static final double SHOOT_SEQUENCE_TIMEOUT = 4.0;    // Max time for 3-ball sequence
+        
+        // Intake timing
+        public static final double INTAKE_DURATION = 3.0;           // Time to intake balls
+        
+        // Path timing
+        public static final double PATH_TIMEOUT = 5.0;              // Max time for path completion
+        
+        // Number of balls
+        public static final int BALLS_PER_CYCLE = 3;                // Balls loaded/shot per cycle
+    }
 }
 
