@@ -169,18 +169,22 @@ public class DecodeTeleOp extends OpMode {
     @Override
     public void start() {
         // Start TeleOp driving
-        robot.localization.getFollower().startTeleopDrive();
+        if (robot.localization != null && robot.localization.getFollower() != null) {
+            robot.localization.getFollower().startTeleopDrive();
+        }
 
         // Start shooter motor at current velocity mode
-        robot.shooting.startShooter(currentShooterVelocity);
+        if (robot.shooting != null) {
+            robot.shooting.startShooter(currentShooterVelocity);
+        }
 
         // Intake motor only starts if in intake mode (default is launch mode, so don't start)
         // Intake will start when user switches to intake mode with A/Cross button
 
-        // Auto-turret starts DISABLED - press GP2 X to enable after testing in TurretTest
-        // This allows you to verify turret tracking works before enabling in competition code
         // Enable auto-turret tracking by default
-        robot.autoTurret.enableCombinedGoalTracking();
+        if (robot.autoTurret != null) {
+            robot.autoTurret.enableCombinedGoalTracking();
+        }
 
         telemetry.addLine("🚀 TeleOp Started!");
         telemetry.addLine("✅ Shooter Running at " + currentShooterVelocity + " (" + (isHighVelocityMode ? "HIGH" : "LOW") + ")");
@@ -345,7 +349,7 @@ public class DecodeTeleOp extends OpMode {
         // Press X (Xbox) or Square (PS4) to toggle auto-turret tracking on/off
         // Starts DISABLED - test in TurretTest first, then enable here
         boolean gp2XPressed = gamepad2.x || gamepad2.square; // Support both Xbox and PS4
-        if (gp2XPressed && !prevGP2X) {
+        if (gp2XPressed && !prevGP2X && robot.autoTurret != null) {
             autoTurretEnabled = !autoTurretEnabled;
             if (autoTurretEnabled) {
                 robot.autoTurret.enableCombinedGoalTracking();
@@ -410,7 +414,7 @@ public class DecodeTeleOp extends OpMode {
         // When you've manually aimed to the correct position, press Left Bumper to
         // tell the system "this is correct" - fixes any tracking drift/error
         boolean gp2LeftBumperPressed = gamepad2.left_bumper;
-        if (gp2LeftBumperPressed && !prevGP2LeftBumper) {
+        if (gp2LeftBumperPressed && !prevGP2LeftBumper && robot.autoTurret != null) {
             robot.autoTurret.recalibratePosition();
             lastCalibrationStatus = "Manual (LB)";
             telemetry.addLine("✅ Turret RECALIBRATED - Position locked as reference!");
@@ -505,18 +509,22 @@ public class DecodeTeleOp extends OpMode {
         // Support both controller types
         boolean rightBumperPressed = gamepad1.right_bumper;
         if (rightBumperPressed && !prevRightBumper) {
-            // Only shoot if in launch mode
+            // Only shoot if in launch mode and not already shooting
             if (!robot.autoIntake.isIntakeMode() && !robot.autoShoot.isInProgress()) {
                 // Determine number of balls based on current turret position
                 int ballsToShoot = robot.autoIntake.getCurrentIndex() + 1;
-                robot.autoShoot.start(ballsToShoot);
+                // Validate: must have at least 1 ball to shoot
+                if (ballsToShoot > 0 && ballsToShoot <= 3) {
+                    robot.autoShoot.start(ballsToShoot);
+                }
             }
         }
         prevRightBumper = rightBumperPressed;
 
         // ========== READY TO SHOOT RUMBLE ==========
         // Rumble when system becomes ready to shoot (turret on target + shooter at speed)
-        boolean isReadyToShoot = robot.isReadyToShoot() && !robot.autoIntake.isIntakeMode();
+        boolean isReadyToShoot = robot.isReadyToShoot() && 
+            (robot.autoIntake == null || !robot.autoIntake.isIntakeMode());
         if (isReadyToShoot && !wasReadyToShoot) {
             // Just became ready - double pulse rumble to signal "ready!"
             gamepad1.rumbleBlips(2);
@@ -526,7 +534,8 @@ public class DecodeTeleOp extends OpMode {
         
         // ========== TURRET AT LIMIT WARNING ==========
         // Warn driver when turret hits rotation limit (goal behind robot)
-        boolean turretAtLimit = autoTurretEnabled && robot.autoTurret.isAtLimit();
+        boolean turretAtLimit = autoTurretEnabled && 
+            robot.autoTurret != null && robot.autoTurret.isAtLimit();
         if (turretAtLimit && !wasTurretAtLimit) {
             // Just hit limit - long rumble to warn driver to rotate robot
             gamepad1.rumble(500); // 500ms warning

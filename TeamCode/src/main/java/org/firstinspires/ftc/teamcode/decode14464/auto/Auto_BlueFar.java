@@ -248,7 +248,7 @@ public class Auto_BlueFar extends OpMode {
                 
             case WAIT_TURRET_INITIAL:
                 // Small delay to let auto-tracking stabilize
-                if (elapsed > 0.2) {  // 200ms settling time
+                if (elapsed > RobotConstants.Auto.TURRET_SETTLING_TIME) {
                     currentState = AutoState.WAIT_SHOOTER_READY_1;
                     actionTimer.resetTimer();
                 }
@@ -282,9 +282,15 @@ public class Auto_BlueFar extends OpMode {
                 break;
                 
             case WAIT_SHOOT_COMPLETE_1:
-                // Wait for shooting to complete
-                if (!robot.autoShoot.isInProgress() || 
-                    elapsed > RobotConstants.Auto.SHOOT_SEQUENCE_TIMEOUT) {
+                // Wait for shooting to complete (timeout is safety fallback)
+                // Transition when: shooting finished OR safety timeout reached
+                if (!robot.autoShoot.isInProgress()) {
+                    // Shooting completed normally
+                    currentState = AutoState.DRIVE_TO_INTAKE;
+                    actionTimer.resetTimer();
+                } else if (elapsed > RobotConstants.Auto.SHOOT_SEQUENCE_TIMEOUT) {
+                    // Safety timeout - force continue even if shooting stuck
+                    robot.autoShoot.stop(); // Stop any stuck shooting
                     currentState = AutoState.DRIVE_TO_INTAKE;
                     actionTimer.resetTimer();
                 }
@@ -368,9 +374,14 @@ public class Auto_BlueFar extends OpMode {
                 break;
                 
             case WAIT_SHOOT_COMPLETE_2:
-                // Wait for shooting to complete
-                if (!robot.autoShoot.isInProgress() || 
-                    elapsed > RobotConstants.Auto.SHOOT_SEQUENCE_TIMEOUT) {
+                // Wait for shooting to complete (timeout is safety fallback)
+                if (!robot.autoShoot.isInProgress()) {
+                    // Shooting completed normally
+                    robot.shooting.stopShooter();
+                    currentState = AutoState.COMPLETE;
+                } else if (elapsed > RobotConstants.Auto.SHOOT_SEQUENCE_TIMEOUT) {
+                    // Safety timeout - force complete
+                    robot.autoShoot.stop();
                     robot.shooting.stopShooter();
                     currentState = AutoState.COMPLETE;
                 }

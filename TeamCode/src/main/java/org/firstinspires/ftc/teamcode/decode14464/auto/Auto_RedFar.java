@@ -241,7 +241,7 @@ public class Auto_RedFar extends OpMode {
                 break;
                 
             case WAIT_TURRET_INITIAL:
-                if (elapsed > 0.2) {
+                if (elapsed > RobotConstants.Auto.TURRET_SETTLING_TIME) {
                     currentState = AutoState.WAIT_SHOOTER_READY_1;
                     actionTimer.resetTimer();
                 }
@@ -273,9 +273,12 @@ public class Auto_RedFar extends OpMode {
                 break;
                 
             case WAIT_SHOOT_COMPLETE_1:
-                // Wait for shooting to complete
-                if (!robot.autoShoot.isInProgress() || 
-                    elapsed > RobotConstants.Auto.SHOOT_SEQUENCE_TIMEOUT) {
+                // Wait for shooting to complete (timeout is safety fallback)
+                if (!robot.autoShoot.isInProgress()) {
+                    currentState = AutoState.DRIVE_TO_INTAKE;
+                    actionTimer.resetTimer();
+                } else if (elapsed > RobotConstants.Auto.SHOOT_SEQUENCE_TIMEOUT) {
+                    robot.autoShoot.stop();
                     currentState = AutoState.DRIVE_TO_INTAKE;
                     actionTimer.resetTimer();
                 }
@@ -359,9 +362,12 @@ public class Auto_RedFar extends OpMode {
                 break;
                 
             case WAIT_SHOOT_COMPLETE_2:
-                // Wait for shooting to complete
-                if (!robot.autoShoot.isInProgress() || 
-                    elapsed > RobotConstants.Auto.SHOOT_SEQUENCE_TIMEOUT) {
+                // Wait for shooting to complete (timeout is safety fallback)
+                if (!robot.autoShoot.isInProgress()) {
+                    robot.shooting.stopShooter();
+                    currentState = AutoState.COMPLETE;
+                } else if (elapsed > RobotConstants.Auto.SHOOT_SEQUENCE_TIMEOUT) {
+                    robot.autoShoot.stop();
                     robot.shooting.stopShooter();
                     currentState = AutoState.COMPLETE;
                 }

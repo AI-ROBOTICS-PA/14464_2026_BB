@@ -209,6 +209,9 @@ public class RobotConstants {
         
         // Time to wait for turret to reach initial position
         public static final double INITIAL_TURRET_MOVE_TIMEOUT = 1.0;      // seconds
+        
+        // Settling time after turret reaches position before enabling auto-tracking
+        public static final double TURRET_SETTLING_TIME = 0.2;             // seconds (200ms)
     }
 }
 

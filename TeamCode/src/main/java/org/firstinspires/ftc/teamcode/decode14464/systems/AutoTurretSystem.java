@@ -563,6 +563,34 @@ public class AutoTurretSystem {
         if (motors == null || motors.turret == null) return 0;
         return motors.turret.getCurrentPosition() / TICKS_PER_DEGREE;
     }
+    
+    /**
+     * Check if encoder reading is within expected bounds
+     * Use this to detect potential encoder drift or issues
+     * @return true if encoder is within safe limits, false if suspicious
+     */
+    public boolean isEncoderHealthy() {
+        if (motors == null || motors.turret == null) return true;
+        
+        double currentAngle = getCurrentAngleDegrees();
+        double maxAngle = RobotConstants.Turret.MAX_ROTATION_DEGREES;
+        
+        // Allow 20% overshoot buffer for encoder reading anomalies
+        double safetyBuffer = maxAngle * 1.2;
+        
+        return Math.abs(currentAngle) <= safetyBuffer;
+    }
+    
+    /**
+     * Get encoder health status string for telemetry
+     */
+    public String getEncoderHealthStatus() {
+        if (!isEncoderHealthy()) {
+            return String.format("⚠️ ENCODER WARNING: %.0f° (expect ±%.0f°)", 
+                getCurrentAngleDegrees(), RobotConstants.Turret.MAX_ROTATION_DEGREES);
+        }
+        return "OK";
+    }
 
     /**
      * Check if turret reset is complete
