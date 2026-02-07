@@ -18,6 +18,7 @@ public class AutoTurretSystem {
     private boolean enabled = false;
     private boolean counterRotationEnabled = false;  // Counter-rotation mode
     private boolean combinedGoalTrackingEnabled = false;  // Combined: position + rotation tracking
+    private boolean paused = false;  // When true, update() skips motor control (for manual override)
     
     // ========== LAUNCH MODE ONLY CONTROL ==========
     // When true, turret tracks target but only MOVES when in launch mode
@@ -39,6 +40,12 @@ public class AutoTurretSystem {
     private double lastX = 0;                     // Last robot X position
     private double lastY = 0;                     // Last robot Y position
     private double lastAngleToGoal = 0;           // Last calculated angle to goal
+    
+    // Manual override offset (in encoder ticks)
+    // When operator manually adjusts turret, the difference between manual position
+    // and auto-calculated position is saved here. Applied every update so the
+    // correction persists while auto-tracking continues.
+    private double manualOffsetTicks = 0;
 
     // Local constants (use RobotConstants.Turret for shared values)
     private static final double SOFT_LIMIT_ZONE = RobotConstants.Turret.SOFT_LIMIT_DEGREES * RobotConstants.Turret.TICKS_PER_DEGREE;
@@ -204,6 +211,42 @@ public class AutoTurretSystem {
     }
 
     /**
+     * Pause auto-turret updates without changing the enabled/tracking state.
+     * Use for manual override - auto-turret stays "enabled" but stops controlling the motor.
+     * Call resume() when manual control is done to continue tracking from the new position.
+     */
+    public void pause() {
+        paused = true;
+    }
+
+    /**
+     * Resume auto-turret updates after a pause.
+     * Automatically recalibrates to current position so tracking continues smoothly.
+     */
+    public void resume() {
+        if (paused) {
+            paused = false;
+            // Recalibrate: set target to current position so tracking resumes from here
+            recalibratePosition();
+        }
+    }
+
+    /**
+     * Check if auto-turret is paused (for manual override)
+     */
+    public boolean isPaused() {
+        return paused;
+    }
+
+    /**
+     * Get the current manual offset in degrees
+     * Positive = turret is manually shifted right of auto-target
+     */
+    public double getManualOffsetDegrees() {
+        return manualOffsetTicks / TICKS_PER_DEGREE;
+    }
+
+    /**
      * Reset combined goal tracking state
      */
     private void resetCombinedGoalTracking() {
@@ -220,6 +263,7 @@ public class AutoTurretSystem {
         lastTotalRotation = 0;
         previousHeadingChange = 0;
         hasUnwound = false;
+        manualOffsetTicks = 0;  // Clear manual offset on fresh enable
         if (motors != null && motors.turret != null) {
             turretTargetPosition = motors.turret.getCurrentPosition();
         }
@@ -233,9 +277,27 @@ public class AutoTurretSystem {
      * Use this to correct for any tracking errors during a match
      */
     public void recalibratePosition() {
-        if (motors != null && motors.turret != null) {
-            // Set target position to current actual position (zero out error)
-            turretTargetPosition = motors.turret.getCurrentPosition();
+        if (motors != null && motors.turret != null && localization != null) {
+            // Calculate where auto-turret THINKS the target should be (goal angle)
+            double currentHeading = localization.getHeadingDegrees();
+            double fieldAngleToGoal = localization.getAngleToPoint(
+                RobotConstants.Field.GOAL_X,
+                RobotConstants.Field.GOAL_Y
+            );
+            double autoTargetAngle = normalizeAngle(fieldAngleToGoal - currentHeading);
+            
+            // Clamp to limits (same as updateCombinedGoalTracking)
+            double maxRotation = RobotConstants.Turret.MAX_ROTATION_DEGREES;
+            autoTargetAngle = Math.max(-maxRotation, Math.min(maxRotation, autoTargetAngle));
+            
+            double autoTargetTicks = autoTargetAngle * TICKS_PER_DEGREE;
+            
+            // Calculate offset: difference between where turret IS vs where auto wants it
+            double currentEncoderPosition = motors.turret.getCurrentPosition();
+            manualOffsetTicks = currentEncoderPosition - autoTargetTicks;
+            
+            // Set target to current position (zero out PID error)
+            turretTargetPosition = currentEncoderPosition;
         }
         // Reset tracking references to current state
         if (localization != null) {
@@ -322,6 +384,12 @@ public class AutoTurretSystem {
     public void update() {
         // Null safety check - verify all required components exist
         if (motors == null || motors.turret == null || localization == null) {
+            return;
+        }
+
+        // Skip motor control when paused (manual override active)
+        // Tracking state is preserved so we can resume smoothly
+        if (paused) {
             return;
         }
 
@@ -670,8 +738,8 @@ public class AutoTurretSystem {
             turretAngleNeeded = -maxRotation;
         }
         
-        // Convert angle to encoder ticks
-        turretTargetPosition = turretAngleNeeded * TICKS_PER_DEGREE;
+        // Convert angle to encoder ticks + apply manual offset
+        turretTargetPosition = turretAngleNeeded * TICKS_PER_DEGREE + manualOffsetTicks;
         
         // Track for telemetry
         lastAngleToGoal = fieldAngleToGoal;

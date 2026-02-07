@@ -208,8 +208,24 @@ public class DecodeTeleOp extends OpMode {
 
     @Override
     public void loop() {
+        // ========== DETECT GP2 MANUAL TURRET INPUT FIRST ==========
+        double turretDpadInput = 0;
+        if (gamepad2.dpad_left) {
+            turretDpadInput = TURRET_MANUAL_POWER;
+        } else if (gamepad2.dpad_right) {
+            turretDpadInput = -TURRET_MANUAL_POWER;
+        }
+        double turretStickInput = -gamepad2.right_stick_x * 0.5;
+        boolean hasManualInput = Math.abs(turretDpadInput) > 0.01 || Math.abs(turretStickInput) > 0.1;
+        
         // ========== UPDATE ALL SYSTEMS ==========
-        robot.updateAll();
+        // If manual turret input is active, SKIP autoTurret.update() completely
+        // This guarantees auto-turret cannot overwrite manual motor power
+        if (hasManualInput || turretManualOverride) {
+            robot.updateAllExceptTurret();
+        } else {
+            robot.updateAll();
+        }
 
         // ========== POSITION LOCK (GP2 Left Trigger HOLD) ==========
         // Hold Left Trigger to lock position - resists being pushed by other robots
@@ -376,51 +392,33 @@ public class DecodeTeleOp extends OpMode {
         prevGP2X = gp2XPressed;
 
         // ========== GP2: TURRET MANUAL CONTROL (D-Pad Left/Right + Right Stick X) ==========
-        // When auto-turret is enabled: GP2 provides manual override
-        // When auto-turret is disabled: GP2 provides direct manual control
-        double turretDpadInput = 0;
-        if (gamepad2.dpad_left) {
-            turretDpadInput = -TURRET_MANUAL_POWER;
-        } else if (gamepad2.dpad_right) {
-            turretDpadInput = TURRET_MANUAL_POWER;
-        }
+        // Simple approach: if GP2 has manual input, we control the motor directly.
+        // autoTurret.update() was already SKIPPED in updateAllExceptTurret() above.
+        // When released, recalibrate so auto-turret resumes from the new position.
         
-        double turretStickInput = -gamepad2.right_stick_x * 0.5; // Right stick X for variable control
-        
-        // Determine if manual input is active
-        boolean hasManualInput = Math.abs(turretDpadInput) > 0.01 || Math.abs(turretStickInput) > 0.1;
-        
-        if (autoTurretEnabled) {
-            // Auto-turret is ON - manual input provides temporary override
-            if (hasManualInput) {
-                turretManualOverride = true;
-                double manualPower = Math.abs(turretDpadInput) > 0.01 ? turretDpadInput : turretStickInput;
-                if (robot.motors != null && robot.motors.turret != null) {
-                    robot.motors.turret.setPower(manualPower);
-                }
-            } else {
-                // No manual input - if we were overriding, recalibrate to sync position
-                if (turretManualOverride && robot.autoTurret != null) {
-                    robot.autoTurret.recalibratePosition();
-                }
-                turretManualOverride = false;
-                // Auto-tracking handled by robot.updateAll() -> autoTurret.update()
+        if (hasManualInput) {
+            // ===== MANUAL INPUT ACTIVE =====
+            // autoTurret.update() was skipped - we have full control of the motor
+            turretManualOverride = true;
+            double manualPower = Math.abs(turretDpadInput) > 0.01 ? turretDpadInput : turretStickInput;
+            manualPower = enforceTurretLimitsForManual(manualPower);
+            if (robot.motors != null && robot.motors.turret != null) {
+                robot.motors.turret.setPower(manualPower);
             }
-        } else {
-            // Auto-turret is OFF - always use manual control
-            turretManualOverride = true; // Always in manual mode
-            if (hasManualInput) {
-                double manualPower = Math.abs(turretDpadInput) > 0.01 ? turretDpadInput : turretStickInput;
-                if (robot.motors != null && robot.motors.turret != null) {
-                    robot.motors.turret.setPower(manualPower);
-                }
-            } else {
-                // No input - stop turret (since auto-tracking is off)
-                if (robot.motors != null && robot.motors.turret != null) {
-                    robot.motors.turret.setPower(0);
-                }
+        } else if (turretManualOverride) {
+            // ===== JUST RELEASED MANUAL INPUT =====
+            // Stop the motor first
+            if (robot.motors != null && robot.motors.turret != null) {
+                robot.motors.turret.setPower(0);
             }
+            // Recalibrate auto-turret to current position so it doesn't snap back
+            if (robot.autoTurret != null) {
+                robot.autoTurret.recalibratePosition();
+            }
+            turretManualOverride = false;
+            // Next loop: turretManualOverride is false → updateAll() runs → auto-turret resumes
         }
+        // If no manual input and not overriding: auto-turret handles motor via updateAll()
 
         // ========== GP2: RECALIBRATE TURRET POSITION (Left Bumper) ==========
         // When you've manually aimed to the correct position, press Left Bumper to
@@ -649,6 +647,51 @@ public class DecodeTeleOp extends OpMode {
         performLimelightCalibration(false); // false = auto trigger
     }
 
+    /**
+     * Enforce turret rotation limits for manual control
+     * Prevents turret from rotating beyond safe limits (±135° from center)
+     * Includes soft limit zone that slows down near limits
+     * @param requestedPower Requested motor power (-1.0 to 1.0)
+     * @return Power with limits enforced (may be reduced or zero)
+     */
+    private double enforceTurretLimitsForManual(double requestedPower) {
+        if (robot.motors == null || robot.motors.turret == null) {
+            return 0.0; // No turret motor available
+        }
+        
+        // Get current encoder position
+        int currentPosition = robot.motors.turret.getCurrentPosition();
+        
+        // Get limit constants
+        int maxPosition = RobotConstants.Turret.MAX_ENCODER_POSITION;
+        int minPosition = RobotConstants.Turret.MIN_ENCODER_POSITION;
+        double softLimitZone = RobotConstants.Turret.SOFT_LIMIT_DEGREES * RobotConstants.Turret.TICKS_PER_DEGREE;
+        
+        // Hard limit check - stop if at max limit and trying to go further positive
+        if (currentPosition >= maxPosition && requestedPower > 0) {
+            return 0.0; // Stop - can't go further positive
+        }
+        
+        // Hard limit check - stop if at min limit and trying to go further negative
+        if (currentPosition <= minPosition && requestedPower < 0) {
+            return 0.0; // Stop - can't go further negative
+        }
+        
+        // Soft limit - slow down near max limit
+        if (currentPosition > (maxPosition - softLimitZone) && requestedPower > 0) {
+            double reduction = (maxPosition - currentPosition) / softLimitZone;
+            requestedPower *= Math.max(0.1, reduction); // At least 10% power
+        }
+        
+        // Soft limit - slow down near min limit
+        if (currentPosition < (minPosition + softLimitZone) && requestedPower < 0) {
+            double reduction = (currentPosition - minPosition) / softLimitZone;
+            requestedPower *= Math.max(0.1, reduction); // At least 10% power
+        }
+        
+        return requestedPower;
+    }
+
     private void updateTelemetry() {
         // ========== PAGE SWITCHING (GP2 Back/Share Button) ==========
         boolean gp2BackPressed = gamepad2.back || gamepad2.share; // Support both Xbox and PS4
@@ -690,6 +733,32 @@ public class DecodeTeleOp extends OpMode {
      * Page 0: Essential info - what drivers need during match
      */
     private void displayEssentialPage() {
+        // ========== DEBUG: GP2 INPUT STATUS ==========
+        telemetry.addLine("─── DEBUG GP2 ───");
+        telemetry.addData("GP2 DpadL/R", gamepad2.dpad_left + " / " + gamepad2.dpad_right);
+        telemetry.addData("GP2 RStickX", String.format("%.2f", gamepad2.right_stick_x));
+        telemetry.addData("GP2 Square/X", (gamepad2.square || gamepad2.x) + "");
+        telemetry.addData("GP2 Triangle/Y", (gamepad2.triangle || gamepad2.y) + "");
+        telemetry.addData("GP2 LBumper", gamepad2.left_bumper + "");
+        
+        // Turret motor status
+        if (robot.motors != null && robot.motors.turret != null) {
+            telemetry.addData("Turret Encoder", robot.motors.turret.getCurrentPosition());
+            telemetry.addData("Turret Power", String.format("%.2f", robot.motors.turret.getPower()));
+            telemetry.addData("Turret Mode", robot.motors.turret.getMode().toString());
+        } else {
+            telemetry.addLine("⚠️ TURRET MOTOR IS NULL!");
+        }
+        
+        telemetry.addData("AutoTurret Enabled", autoTurretEnabled);
+        telemetry.addData("Manual Override", turretManualOverride);
+        if (robot.autoTurret != null) {
+            telemetry.addData("Manual Offset", String.format("%.1f°", robot.autoTurret.getManualOffsetDegrees()));
+        } else {
+            telemetry.addLine("⚠️ AUTO-TURRET SYSTEM IS NULL!");
+        }
+        telemetry.addLine("─────────────────");
+
         // Position Lock Status (important for shooting!)
         if (positionLockEnabled) {
             telemetry.addLine("🔒 POSITION LOCKED (release GP2 L-Trigger to move)");

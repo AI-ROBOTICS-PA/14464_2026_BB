@@ -162,6 +162,25 @@ public class RobotSystem {
     }
 
     /**
+     * Update all systems EXCEPT auto-turret.
+     * Use this when manual turret override is active to prevent auto-turret
+     * from setting motor power and fighting manual control.
+     */
+    public void updateAllExceptTurret() {
+        localization.update();
+        if (limelight != null) limelight.update();
+        // SKIP: autoTurret.update() - manual control is active
+        autoHood.update();
+        autoIntake.update();
+        shooting.update();
+        autoShoot.update();
+        
+        if (led != null && autoIntake != null) {
+            led.syncWithIntakeMode(autoIntake.isIntakeMode());
+        }
+    }
+
+    /**
      * Stop all systems (for OpMode stop())
      * Automatically saves turret position for TeleOp continuity
      */

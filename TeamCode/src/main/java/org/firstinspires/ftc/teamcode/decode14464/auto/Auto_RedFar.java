@@ -40,7 +40,7 @@ import org.firstinspires.ftc.teamcode.decode14464.systems.RobotSystem;
  * - Y increases upward  
  * - 0° = facing right, 90° = facing up (counterclockwise positive)
  */
-@Autonomous(name = "Auto Red Far", group = "DECODE Auto")
+@Autonomous(name = "Auto-Red Far", group = "DECODE Auto")
 public class Auto_RedFar extends OpMode {
 
     // ========== ROBOT SYSTEM ==========
