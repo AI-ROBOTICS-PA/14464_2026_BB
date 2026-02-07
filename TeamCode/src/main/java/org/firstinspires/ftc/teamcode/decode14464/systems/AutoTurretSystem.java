@@ -779,13 +779,13 @@ public class AutoTurretSystem {
         // Clamp to configured limits (default ±135°)
         double maxRotation = RobotConstants.Turret.MAX_ROTATION_DEGREES;
         
-        if (turretAngleNeeded > maxRotation) {
-            // Goal is too far right - go to right limit
-            turretAngleNeeded = maxRotation;
-            // Mark as "at limit" for telemetry
-        } else if (turretAngleNeeded < -maxRotation) {
-            // Goal is too far left - go to left limit  
-            turretAngleNeeded = -maxRotation;
+        if (Math.abs(turretAngleNeeded) > maxRotation) {
+            // Goal is in the dead zone behind the robot.
+            // Hold at whichever limit the turret is ALREADY closest to.
+            // This prevents the turret from snapping to the opposite side when
+            // normalizeAngle flips the sign at the ±180° boundary.
+            double currentTurretDegrees = motors.turret.getCurrentPosition() / TICKS_PER_DEGREE;
+            turretAngleNeeded = (currentTurretDegrees >= 0) ? maxRotation : -maxRotation;
         }
         
         // Convert angle to encoder ticks + apply manual offset
