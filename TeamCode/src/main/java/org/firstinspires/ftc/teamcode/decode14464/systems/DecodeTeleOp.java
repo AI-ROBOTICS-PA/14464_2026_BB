@@ -154,6 +154,18 @@ public class DecodeTeleOp extends OpMode {
 
         telemetry.addLine("✅ DECODE TeleOp Initialized");
         telemetry.addLine();
+        
+        // Show turret position continuity status
+        if (RobotMotors.hasSavedTurretPosition()) {
+            double savedAngle = RobotMotors.getSavedTurretPosition() / RobotConstants.Turret.TICKS_PER_DEGREE;
+            telemetry.addLine("✅ TURRET POSITION PRESERVED from Auto!");
+            telemetry.addData("   Turret Angle", "%.1f° (continuing from Auto)", savedAngle);
+        } else {
+            telemetry.addLine("ℹ️ Turret reset to 0° (no Auto ran)");
+            telemetry.addLine("   Make sure turret is physically centered!");
+        }
+        telemetry.addLine();
+        
         telemetry.addLine("Controls:");
         telemetry.addLine("  A/Cross: Toggle Intake ↔ Launch Mode");
         telemetry.addLine("  Right Bumper: Auto-Shoot All Balls");

@@ -28,6 +28,10 @@ public class RobotSystem {
      * @param startPose Starting position for localization
      */
     public void init(HardwareMap hardwareMap, Pose startPose) {
+        // Clear any saved turret position from previous runs
+        // This ensures fresh start for Auto and prevents stale data
+        RobotMotors.clearSavedTurretPosition();
+        
         // Initialize systems in dependency order
 
         // 0. Robot Motors, Sensors, and Servos (centralized hardware)
@@ -77,14 +81,24 @@ public class RobotSystem {
     }
 
     /**
-     * Initialize for TeleOp - PRESERVES position from Auto
-     * Use this in TeleOp programs to maintain position continuity from Auto period
+     * Initialize for TeleOp - PRESERVES turret position from Auto (if available)
+     * Use this in TeleOp programs to maintain turret position continuity from Auto period
+     * 
+     * Behavior:
+     * - If Auto ran first: Preserves turret position from Auto
+     * - If TeleOp runs alone: Resets turret to 0 (assumes physically centered)
+     * 
      * @param hardwareMap The hardware map from OpMode
      */
     public void initTeleOp(HardwareMap hardwareMap) {
+        // Check if we have a saved position from Auto
+        boolean hasAutoPosition = RobotMotors.hasSavedTurretPosition();
+        
         // Initialize hardware
         motors = new RobotMotors();
-        motors.init(hardwareMap);
+        // If Auto ran → don't reset encoder (preserve position)
+        // If TeleOp only → reset encoder to 0 (start fresh)
+        motors.init(hardwareMap, !hasAutoPosition);
 
         sensors = new RobotSensors();
         sensors.init(hardwareMap);
@@ -149,14 +163,28 @@ public class RobotSystem {
 
     /**
      * Stop all systems (for OpMode stop())
+     * Automatically saves turret position for TeleOp continuity
      */
     public void stopAll() {
+        // Save turret position BEFORE stopping (for TeleOp to use)
+        saveTurretPositionForTeleOp();
+        
         if (autoTurret != null) autoTurret.stop();
         if (shooting != null) shooting.stopShooter();
         if (autoShoot != null) autoShoot.stop();
         if (autoIntake != null) autoIntake.stopAll();
         if (led != null) led.turnOff();
         if (limelight != null) limelight.stop();
+    }
+    
+    /**
+     * Save turret position so TeleOp can continue from where Auto left off
+     * Called automatically by stopAll(), but can also call manually
+     */
+    public void saveTurretPositionForTeleOp() {
+        if (motors != null) {
+            motors.saveTurretPosition();
+        }
     }
 
     /**

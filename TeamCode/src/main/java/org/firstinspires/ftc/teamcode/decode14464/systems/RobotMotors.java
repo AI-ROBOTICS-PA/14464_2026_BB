@@ -10,16 +10,73 @@ public class RobotMotors {
     public DcMotor intake = null;
     public DcMotorEx flywheelMotor = null;  // Changed to DcMotorEx for velocity control
     public DcMotorEx turret = null;
+    
+    // ========== TURRET POSITION PERSISTENCE ==========
+    // Static variable to persist turret position between OpModes (Auto → TeleOp)
+    // This allows TeleOp to know where the turret ended up after Auto
+    private static int savedTurretPosition = 0;
+    private static boolean hasSavedPosition = false;
+    
+    /**
+     * Save current turret position for use in next OpMode
+     * Call this at the END of Autonomous before stopping
+     */
+    public void saveTurretPosition() {
+        if (turret != null) {
+            savedTurretPosition = turret.getCurrentPosition();
+            hasSavedPosition = true;
+        }
+    }
+    
+    /**
+     * Check if there's a saved turret position from previous OpMode
+     */
+    public static boolean hasSavedTurretPosition() {
+        return hasSavedPosition;
+    }
+    
+    /**
+     * Get the saved turret position (in encoder ticks)
+     */
+    public static int getSavedTurretPosition() {
+        return savedTurretPosition;
+    }
+    
+    /**
+     * Clear the saved position (use when you want to reset)
+     */
+    public static void clearSavedTurretPosition() {
+        savedTurretPosition = 0;
+        hasSavedPosition = false;
+    }
 
-
+    /**
+     * Standard init - resets turret encoder to 0
+     * Use for: First run of the day, or when turret is at known 0 position
+     */
     public void init(HardwareMap hardwareMap) {
+        init(hardwareMap, true); // Default: reset encoder
+    }
+    
+    /**
+     * Init with option to preserve turret encoder position
+     * @param hardwareMap Hardware map
+     * @param resetTurretEncoder If false, preserves turret position from Auto
+     */
+    public void init(HardwareMap hardwareMap, boolean resetTurretEncoder) {
         // Initialize intake motor
         intake = hardwareMap.get(DcMotor.class, "intake");
         intake.setDirection(DcMotor.Direction.REVERSE);
 
         // Initialize turret motor with proper configuration
         turret = hardwareMap.get(DcMotorEx.class, "turret");
-        turret.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        
+        if (resetTurretEncoder) {
+            // Reset encoder to 0 (normal init)
+            turret.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        }
+        // If not resetting, encoder keeps its current value
+        
         turret.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         turret.setDirection(DcMotor.Direction.FORWARD);
         turret.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
