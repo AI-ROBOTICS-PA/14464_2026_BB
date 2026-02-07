@@ -791,6 +791,10 @@ public class AutoTurretSystem {
         // Convert angle to encoder ticks + apply manual offset
         turretTargetPosition = turretAngleNeeded * TICKS_PER_DEGREE + manualOffsetTicks;
         
+        // Clamp target to encoder limits (wire safety)
+        turretTargetPosition = Math.max(MIN_ENCODER_POSITION, 
+                                        Math.min(MAX_ENCODER_POSITION, turretTargetPosition));
+        
         // Track for telemetry
         lastAngleToGoal = fieldAngleToGoal;
         lastHeading = currentHeading;
@@ -913,6 +917,9 @@ public class AutoTurretSystem {
         if (Math.abs(power) > 0.01 && Math.abs(power) < minPower) {
             power = Math.signum(power) * minPower;
         }
+
+        // Enforce encoder limits (hard stops + soft limits near edges)
+        power = enforceTurretLimits(currentPosition, power);
 
         // Apply smooth power changes (prevent jerky motion)
         double maxPowerChange = 0.10;
