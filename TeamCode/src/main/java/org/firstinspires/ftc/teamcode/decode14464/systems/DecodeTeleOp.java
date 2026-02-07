@@ -1,5 +1,6 @@
 package org.firstinspires.ftc.teamcode.decode14464.systems;
 
+import com.pedropathing.geometry.Pose;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 
@@ -22,7 +23,7 @@ import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
  * - Right Stick X: Rotation
  *
  * GAMEPAD 2 (Operator):
- * - A/Cross: Toggle Alliance (BLUE=Tag 20, RED=Tag 24) for Limelight targeting
+ * - A/Cross: Toggle Alliance BEFORE START only (BLUE=Tag 20, RED=Tag 24)
  * - X/Square: Toggle Auto-Turret tracking ON/OFF
  * - Y/Triangle: Toggle Auto-Calibration ON/OFF
  * - Left Stick Y: Manual intake control (Up = Intake, Down = Outtake)
@@ -76,10 +77,19 @@ import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
  * - Manual controls work in both INTAKE and LAUNCH modes
  * - System respects current mode (uses INTAKE or LAUNCH positions)
  */
-@TeleOp(name = "DECODE TeleOp", group = "Main")
+@TeleOp(name = "DECODE TeleOp (BLUE)", group = "Main")
 public class DecodeTeleOp extends OpMode {
 
-    private RobotSystem robot;
+    protected RobotSystem robot;
+
+    /**
+     * Get the default alliance for this TeleOp program.
+     * Override in subclass to change default (e.g., DecodeTeleOp_Red returns RED).
+     * User can still toggle with GP2 A before pressing START.
+     */
+    protected LimelightManager.Alliance getDefaultAlliance() {
+        return LimelightManager.Alliance.BLUE;
+    }
 
     // Button state tracking for edge detection
     private boolean prevA = false;
@@ -116,6 +126,11 @@ public class DecodeTeleOp extends OpMode {
     private boolean prevGP2LeftBumper = false; // For recalibrate button detection
     private boolean prevGP2RightBumper = false; // For Limelight calibration button
 
+    // ========== TELEOP MODE ==========
+    // Standalone TeleOp: uses default alliance-based starting position + goal tracking
+    // Post-Auto TeleOp: preserves position from Auto + goal tracking
+    private boolean isStandaloneTeleOp = false;
+
     // ========== LIMELIGHT AUTO-CALIBRATION ==========
     private static final double AUTO_CALIBRATE_COOLDOWN_MS = 2000; // Minimum time between auto-calibrations
     private static final double AUTO_CALIBRATE_TX_THRESHOLD = 5.0; // Max tx error (degrees) for auto-calibrate
@@ -146,31 +161,45 @@ public class DecodeTeleOp extends OpMode {
         robot = new RobotSystem();
         robot.initTeleOp(hardwareMap);
 
+        // Set default alliance based on which program was selected
+        if (robot.limelight != null) {
+            robot.limelight.setAlliance(getDefaultAlliance());
+        }
+        if (robot.autoTurret != null) {
+            if (getDefaultAlliance() == LimelightManager.Alliance.RED) {
+                robot.autoTurret.setRedAlliance();
+            } else {
+                robot.autoTurret.setBlueAlliance();
+            }
+        }
+
         // Initialize hood servo to starting position
         currentHoodPosition = HOOD_POSITIONS[currentHoodIndex];
         if (robot.servos != null && robot.servos.hood_5 != null) {
             robot.servos.hood_5.setPosition(currentHoodPosition);
         }
 
-        telemetry.addLine("✅ DECODE TeleOp Initialized");
+        String defaultAllianceStr = getDefaultAlliance() == LimelightManager.Alliance.RED ? "RED" : "BLUE";
+        telemetry.addLine("✅ DECODE TeleOp Initialized (Default: " + defaultAllianceStr + ")");
         telemetry.addLine();
         
-        // Show turret position continuity status
-        if (RobotMotors.hasSavedTurretPosition()) {
+        // Detect standalone vs post-Auto
+        isStandaloneTeleOp = !RobotMotors.hasSavedTurretPosition();
+        
+        if (!isStandaloneTeleOp) {
+            // Auto ran first → position preserved from Auto
             double savedAngle = RobotMotors.getSavedTurretPosition() / RobotConstants.Turret.TICKS_PER_DEGREE;
             telemetry.addLine("✅ TURRET POSITION PRESERVED from Auto!");
             telemetry.addData("   Turret Angle", "%.1f° (continuing from Auto)", savedAngle);
+            telemetry.addLine("   Turret Mode: GOAL TRACKING (position from Auto)");
         } else {
-            telemetry.addLine("ℹ️ Turret reset to 0° (no Auto ran)");
+            // Standalone TeleOp → use default starting position based on alliance
+            telemetry.addLine("ℹ️ Standalone TeleOp (no Auto ran)");
             telemetry.addLine("   Make sure turret is physically centered!");
+            telemetry.addLine();
+            telemetry.addLine(">>> GP2 A/Cross: Toggle BLUE/RED Alliance <<<");
+            telemetry.addLine("   (sets starting position + goal target)");
         }
-        telemetry.addLine();
-        
-        telemetry.addLine("Controls:");
-        telemetry.addLine("  A/Cross: Toggle Intake ↔ Launch Mode");
-        telemetry.addLine("  Right Bumper: Auto-Shoot All Balls");
-        telemetry.addLine("  D-Pad Up/Down: Hood Preset (LONG/MEDIUM/SHORT)");
-        telemetry.addLine("  Left Trigger: Toggle HIGH/LOW Velocity");
         telemetry.addLine();
         telemetry.addData("Current Mode", "LAUNCH (ready to shoot)");
         telemetry.addData("Hood", HOOD_POSITION_NAMES[currentHoodIndex]);
@@ -179,7 +208,73 @@ public class DecodeTeleOp extends OpMode {
     }
 
     @Override
+    public void init_loop() {
+        // Allow alliance selection BEFORE pressing START
+        // GP2 A/Cross toggles alliance (same button as in loop)
+        boolean gp2APressed = gamepad2.a || gamepad2.cross;
+        if (gp2APressed && !prevGP2A && robot.limelight != null) {
+            robot.limelight.toggleAlliance();
+            // Sync turret goal with new alliance
+            if (robot.autoTurret != null) {
+                if (robot.limelight.getAlliance() == LimelightManager.Alliance.RED) {
+                    robot.autoTurret.setRedAlliance();
+                } else {
+                    robot.autoTurret.setBlueAlliance();
+                }
+            }
+        }
+        prevGP2A = gp2APressed;
+
+        // Show current alliance and starting position
+        boolean isRed = robot.limelight != null && robot.limelight.getAlliance() == LimelightManager.Alliance.RED;
+        telemetry.addLine("✅ DECODE TeleOp - WAITING FOR START");
+        telemetry.addLine();
+
+        if (isRed) {
+            telemetry.addLine("🔴 RED ALLIANCE");
+            telemetry.addData("   Start Position", "(%.0f, %.0f) heading %.0f°",
+                RobotConstants.Field.RED_TELEOP_START_X, RobotConstants.Field.RED_TELEOP_START_Y,
+                RobotConstants.Field.RED_TELEOP_START_HEADING);
+            telemetry.addData("   Goal", "(%.0f, %.0f)", 
+                RobotConstants.Field.RED_GOAL_X, RobotConstants.Field.RED_GOAL_Y);
+        } else {
+            telemetry.addLine("🔵 BLUE ALLIANCE");
+            telemetry.addData("   Start Position", "(%.0f, %.0f) heading %.0f°",
+                RobotConstants.Field.BLUE_TELEOP_START_X, RobotConstants.Field.BLUE_TELEOP_START_Y,
+                RobotConstants.Field.BLUE_TELEOP_START_HEADING);
+            telemetry.addData("   Goal", "(%.0f, %.0f)", 
+                RobotConstants.Field.BLUE_GOAL_X, RobotConstants.Field.BLUE_GOAL_Y);
+        }
+
+        telemetry.addLine();
+        telemetry.addLine(">>> GP2 A/Cross: Toggle Alliance <<<");
+        telemetry.addLine(">>> Press START when ready <<<");
+        telemetry.addLine();
+        telemetry.addData("Hood", HOOD_POSITION_NAMES[currentHoodIndex]);
+        telemetry.addData("Velocity", isHighVelocityMode ? "HIGH" : "LOW");
+        telemetry.update();
+    }
+
+    @Override
     public void start() {
+        // ========== SET STARTING POSITION FOR STANDALONE TELEOP ==========
+        boolean isRed = robot.limelight != null && robot.limelight.getAlliance() == LimelightManager.Alliance.RED;
+        
+        if (isStandaloneTeleOp && robot.localization != null) {
+            // Set default starting position based on selected alliance
+            double startX, startY, startHeadingDeg;
+            if (isRed) {
+                startX = RobotConstants.Field.RED_TELEOP_START_X;
+                startY = RobotConstants.Field.RED_TELEOP_START_Y;
+                startHeadingDeg = RobotConstants.Field.RED_TELEOP_START_HEADING;
+            } else {
+                startX = RobotConstants.Field.BLUE_TELEOP_START_X;
+                startY = RobotConstants.Field.BLUE_TELEOP_START_Y;
+                startHeadingDeg = RobotConstants.Field.BLUE_TELEOP_START_HEADING;
+            }
+            robot.localization.setPose(new Pose(startX, startY, Math.toRadians(startHeadingDeg)));
+        }
+
         // Start TeleOp driving
         if (robot.localization != null && robot.localization.getFollower() != null) {
             robot.localization.getFollower().startTeleopDrive();
@@ -193,15 +288,26 @@ public class DecodeTeleOp extends OpMode {
         // Intake motor only starts if in intake mode (default is launch mode, so don't start)
         // Intake will start when user switches to intake mode with A/Cross button
 
-        // Enable auto-turret tracking by default
+        // Set turret goal based on current alliance
+        if (robot.autoTurret != null) {
+            if (isRed) {
+                robot.autoTurret.setRedAlliance();
+            } else {
+                robot.autoTurret.setBlueAlliance();
+            }
+        }
+
+        // Enable goal tracking (always - position is known from Auto or from default)
         if (robot.autoTurret != null) {
             robot.autoTurret.enableCombinedGoalTracking();
         }
 
+        String allianceStr = isRed ? "RED" : "BLUE";
         telemetry.addLine("🚀 TeleOp Started!");
+        telemetry.addLine("✅ Alliance: " + allianceStr);
         telemetry.addLine("✅ Shooter Running at " + currentShooterVelocity + " (" + (isHighVelocityMode ? "HIGH" : "LOW") + ")");
         telemetry.addLine("✅ Hood at " + HOOD_POSITION_NAMES[currentHoodIndex]);
-        telemetry.addLine("✅ Auto-Turret: ENABLED (GP2 X to toggle)");
+        telemetry.addLine("✅ Auto-Turret: GOAL TRACKING (GP2 X to toggle)");
         telemetry.addLine("ℹ️ Intake Motor: OFF (switch to INTAKE mode to enable)");
         telemetry.update();
     }
@@ -382,7 +488,7 @@ public class DecodeTeleOp extends OpMode {
             if (autoTurretEnabled) {
                 robot.autoTurret.enableCombinedGoalTracking();
                 gamepad2.rumble(300);
-                telemetry.log().add("🎯 Auto-Turret ENABLED");
+                telemetry.log().add("🎯 Goal Tracking ENABLED");
             } else {
                 robot.autoTurret.disableCombinedGoalTracking();
                 gamepad2.rumble(100);
@@ -449,20 +555,8 @@ public class DecodeTeleOp extends OpMode {
         }
         prevGP2Y = gp2YPressed;
 
-        // ========== GP2: TOGGLE ALLIANCE (A/Cross Button) ==========
-        // Press A (Xbox) or Cross (PS4) to toggle between BLUE and RED alliance
-        // This changes which AprilTag ID is used for calibration (BLUE=20, RED=24)
-        boolean gp2APressed = gamepad2.a || gamepad2.cross; // Support both Xbox and PS4
-        if (gp2APressed && !prevGP2A) {
-            robot.limelight.toggleAlliance();
-            // Long rumble for RED, short rumble for BLUE
-            if (robot.limelight.getAlliance() == LimelightManager.Alliance.RED) {
-                gamepad2.rumble(400); // Long = RED
-            } else {
-                gamepad2.rumble(150); // Short = BLUE
-            }
-        }
-        prevGP2A = gp2APressed;
+        // NOTE: Alliance toggle (GP2 A) is only available during init_loop() BEFORE START.
+        // Alliance never changes during the match. Goal and AprilTag ID are locked at start.
 
         // ========== AUTOMATIC LIMELIGHT CALIBRATION ==========
         // Auto-calibrate when conditions are good
@@ -558,7 +652,9 @@ public class DecodeTeleOp extends OpMode {
 
     /**
      * Perform Limelight-based calibration
-     * Calibrates both localization (position) and turret (pointing)
+     * Calibrates:
+     * - Robot POSITION only (X, Y) - heading is NOT changed (odometry heading is reliable)
+     * - Turret pointing (using tx horizontal angle)
      * @param isManual true if triggered by button press, false if auto-triggered
      */
     private void performLimelightCalibration(boolean isManual) {
@@ -583,7 +679,7 @@ public class DecodeTeleOp extends OpMode {
         
         // Get Limelight data
         double tx = robot.limelight.getTargetX(); // Horizontal angle to target
-        com.pedropathing.geometry.Pose limelightPose = robot.limelight.getRobotPoseFromAprilTag();
+        Pose limelightPose = robot.limelight.getRobotPoseFromAprilTag();
         
         // === TURRET CALIBRATION ===
         // Use tx (horizontal angle) to calibrate turret pointing
@@ -591,10 +687,11 @@ public class DecodeTeleOp extends OpMode {
             robot.autoTurret.calibrateFromLimelight(tx);
         }
         
-        // === LOCALIZATION CALIBRATION ===
-        // Use botpose to calibrate robot position (if available)
+        // === POSITION-ONLY CALIBRATION ===
+        // Correct robot X, Y position from Limelight. Heading is NOT changed.
+        // Odometry heading (from IMU) is reliable; only X/Y can drift over time.
         if (limelightPose != null) {
-            robot.localization.calibrateFromLimelight(limelightPose);
+            robot.localization.calibratePositionOnly(limelightPose);
         }
         
         // Update status and provide rumble feedback
@@ -603,7 +700,7 @@ public class DecodeTeleOp extends OpMode {
             telemetry.addLine("✅ LIMELIGHT CALIBRATION COMPLETE!");
             telemetry.addLine(String.format("   Turret offset: %.1f°", tx));
             if (limelightPose != null) {
-                telemetry.addLine(String.format("   Position: (%.1f, %.1f)", limelightPose.getX(), limelightPose.getY()));
+                telemetry.addLine(String.format("   Position corrected: (%.1f, %.1f)", limelightPose.getX(), limelightPose.getY()));
             }
             // Rumble feedback for successful manual calibration
             gamepad2.rumble(300);
@@ -803,9 +900,10 @@ public class DecodeTeleOp extends OpMode {
         String hoodMode = isHoodCustomPosition ? "CUSTOM" : HOOD_POSITION_NAMES[currentHoodIndex];
         telemetry.addData("Hood", "%.2f (%s)", currentHoodPosition, hoodMode);
 
-        // Distance
-        telemetry.addData("Distance", "%.0f in", robot.localization.getDistanceToPoint(
-            RobotConstants.Field.GOAL_X, RobotConstants.Field.GOAL_Y));
+        // Distance (to current alliance goal)
+        double distGoalX = robot.autoTurret != null ? robot.autoTurret.getGoalX() : RobotConstants.Field.GOAL_X;
+        double distGoalY = robot.autoTurret != null ? robot.autoTurret.getGoalY() : RobotConstants.Field.GOAL_Y;
+        telemetry.addData("Distance", "%.0f in", robot.localization.getDistanceToPoint(distGoalX, distGoalY));
 
         // Alliance and AprilTag (simple status)
         if (robot.limelight != null && robot.limelight.isConnected()) {
@@ -819,8 +917,15 @@ public class DecodeTeleOp extends OpMode {
 
         // Feature Toggles (compact)
         telemetry.addLine();
+        String turretModeStr;
+        if (!autoTurretEnabled) {
+            turretModeStr = "Turret:OFF";
+        } else {
+            String goal = (robot.autoTurret != null && robot.autoTurret.getGoalX() > 70) ? "RED" : "BLUE";
+            turretModeStr = "Turret:GOAL(" + goal + ")";
+        }
         telemetry.addData("Features", 
-            (autoTurretEnabled ? "Turret:ON" : "Turret:OFF") + " | " +
+            turretModeStr + " | " +
             (autoCalibrationEnabled ? "AutoCal:ON" : "AutoCal:OFF"));
     }
 
@@ -896,8 +1001,8 @@ public class DecodeTeleOp extends OpMode {
         telemetry.addLine("─── GP2 (OPERATOR) ───");
         String allianceStr = robot.limelight != null ? 
             (robot.limelight.getAlliance() == LimelightManager.Alliance.BLUE ? "BLUE" : "RED") : "N/A";
-        telemetry.addData("A/×", "Alliance: " + allianceStr);
-        telemetry.addData("X/□", autoTurretEnabled ? "Turret: ON" : "Turret: OFF");
+        telemetry.addData("A/×", "Alliance: " + allianceStr + " (locked)");
+        telemetry.addData("X/□", autoTurretEnabled ? "Turret: GOAL-TRACK" : "Turret: OFF");
         telemetry.addData("Y/△", autoCalibrationEnabled ? "AutoCal: ON" : "AutoCal: OFF");
         telemetry.addData("L Trigger", "HOLD = Position Lock 🔒");
         telemetry.addData("L Stick Y", "Intake Control");

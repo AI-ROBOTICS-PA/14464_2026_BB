@@ -47,6 +47,11 @@ public class AutoTurretSystem {
     // correction persists while auto-tracking continues.
     private double manualOffsetTicks = 0;
 
+    // ========== ALLIANCE-BASED GOAL TRACKING ==========
+    // Goal position changes based on alliance (Blue vs Red)
+    private double goalX = RobotConstants.Field.BLUE_GOAL_X;  // Default to Blue
+    private double goalY = RobotConstants.Field.BLUE_GOAL_Y;
+
     // Local constants (use RobotConstants.Turret for shared values)
     private static final double SOFT_LIMIT_ZONE = RobotConstants.Turret.SOFT_LIMIT_DEGREES * RobotConstants.Turret.TICKS_PER_DEGREE;
     private static final double POSITION_TOLERANCE = 12;      // ~4° accuracy
@@ -97,6 +102,40 @@ public class AutoTurretSystem {
         this.autoIntake = autoIntake;
     }
     
+    /**
+     * Set goal position for Blue Alliance
+     */
+    public void setBlueAlliance() {
+        goalX = RobotConstants.Field.BLUE_GOAL_X;
+        goalY = RobotConstants.Field.BLUE_GOAL_Y;
+    }
+
+    /**
+     * Set goal position for Red Alliance
+     */
+    public void setRedAlliance() {
+        goalX = RobotConstants.Field.RED_GOAL_X;
+        goalY = RobotConstants.Field.RED_GOAL_Y;
+    }
+
+    /**
+     * Set goal position directly (for custom targets)
+     */
+    public void setGoalPosition(double x, double y) {
+        goalX = x;
+        goalY = y;
+    }
+
+    /**
+     * Get current goal X coordinate
+     */
+    public double getGoalX() { return goalX; }
+
+    /**
+     * Get current goal Y coordinate
+     */
+    public double getGoalY() { return goalY; }
+
     /**
      * Enable/disable launch-mode-only movement
      * When true: Turret tracks target but only MOVES when in launch mode
@@ -255,8 +294,8 @@ public class AutoTurretSystem {
             lastX = localization.getX();
             lastY = localization.getY();
             lastAngleToGoal = localization.getAngleToPoint(
-                RobotConstants.Field.GOAL_X,
-                RobotConstants.Field.GOAL_Y
+                goalX,
+                goalY
             );
         }
         totalRobotRotation = 0;
@@ -281,8 +320,8 @@ public class AutoTurretSystem {
             // Calculate where auto-turret THINKS the target should be (goal angle)
             double currentHeading = localization.getHeadingDegrees();
             double fieldAngleToGoal = localization.getAngleToPoint(
-                RobotConstants.Field.GOAL_X,
-                RobotConstants.Field.GOAL_Y
+                goalX,
+                goalY
             );
             double autoTargetAngle = normalizeAngle(fieldAngleToGoal - currentHeading);
             
@@ -305,8 +344,8 @@ public class AutoTurretSystem {
             lastX = localization.getX();
             lastY = localization.getY();
             lastAngleToGoal = localization.getAngleToPoint(
-                RobotConstants.Field.GOAL_X,
-                RobotConstants.Field.GOAL_Y
+                goalX,
+                goalY
             );
         }
         // Reset PID state
@@ -408,8 +447,8 @@ public class AutoTurretSystem {
     private void updateGoalTracking() {
         // Calculate angle to goal
         double angleToGoal = localization.getAngleToPoint(
-            RobotConstants.Field.GOAL_X,
-            RobotConstants.Field.GOAL_Y
+            goalX,
+            goalY
         );
 
         // Get robot heading
@@ -522,8 +561,8 @@ public class AutoTurretSystem {
         if (localization == null) return 0;
 
         double angleToGoal = localization.getAngleToPoint(
-            RobotConstants.Field.GOAL_X,
-            RobotConstants.Field.GOAL_Y
+            goalX,
+            goalY
         );
         double robotHeading = localization.getHeadingDegrees();
         
@@ -546,8 +585,8 @@ public class AutoTurretSystem {
     public double getDistanceToGoal() {
         if (localization == null) return 0;
         return localization.getDistanceToPoint(
-            RobotConstants.Field.GOAL_X,
-            RobotConstants.Field.GOAL_Y
+            goalX,
+            goalY
         );
     }
 
@@ -714,8 +753,8 @@ public class AutoTurretSystem {
 
         // Calculate angle to goal (field-relative, in degrees)
         double fieldAngleToGoal = localization.getAngleToPoint(
-            RobotConstants.Field.GOAL_X,
-            RobotConstants.Field.GOAL_Y
+            goalX,
+            goalY
         );
 
         // ========== CALCULATE TURRET ANGLE RELATIVE TO ROBOT ==========

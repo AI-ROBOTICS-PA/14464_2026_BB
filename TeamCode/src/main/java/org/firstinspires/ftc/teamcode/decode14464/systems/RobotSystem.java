@@ -223,19 +223,23 @@ public class RobotSystem {
     }
 
     /**
-     * Quick access: Get distance to goal
+     * Quick access: Get distance to goal (uses auto-turret's alliance-aware goal)
      */
     public double getDistanceToGoal() {
-        return localization != null ?
-            localization.getDistanceToPoint(RobotConstants.Field.GOAL_X, RobotConstants.Field.GOAL_Y) : 0;
+        if (localization == null) return 0;
+        double gx = autoTurret != null ? autoTurret.getGoalX() : RobotConstants.Field.GOAL_X;
+        double gy = autoTurret != null ? autoTurret.getGoalY() : RobotConstants.Field.GOAL_Y;
+        return localization.getDistanceToPoint(gx, gy);
     }
 
     /**
-     * Quick access: Get angle to goal
+     * Quick access: Get angle to goal (uses auto-turret's alliance-aware goal)
      */
     public double getAngleToGoal() {
-        return localization != null ?
-            localization.getAngleToPoint(RobotConstants.Field.GOAL_X, RobotConstants.Field.GOAL_Y) : 0;
+        if (localization == null) return 0;
+        double gx = autoTurret != null ? autoTurret.getGoalX() : RobotConstants.Field.GOAL_X;
+        double gy = autoTurret != null ? autoTurret.getGoalY() : RobotConstants.Field.GOAL_Y;
+        return localization.getAngleToPoint(gx, gy);
     }
 
     /**

@@ -8,12 +8,32 @@ public class RobotConstants {
 
     // ==================== FIELD CONSTANTS ====================
     public static final class Field {
-        public static final double WIDTH = 144.0;  // inches
-        public static final double HEIGHT = 144.0; // inches
+        public static final double WIDTH = 144.0;  // inches (12 feet)
+        public static final double HEIGHT = 144.0; // inches (12 feet)
 
-        // Goal position (shooting target)
-        public static final double GOAL_X = 1.0;   // 1 inch from left edge
-        public static final double GOAL_Y = 144.0; // Top edge
+        // Blue Alliance Goal position (left side of field)
+        public static final double BLUE_GOAL_X = 12.0;    // 12 inches from left edge
+        public static final double BLUE_GOAL_Y = 132.0;   // 144 - 12 = 132 inches
+
+        // Red Alliance Goal position (right side of field)
+        public static final double RED_GOAL_X = 132.0;    // 144 - 12 = 132 inches
+        public static final double RED_GOAL_Y = 132.0;    // 144 - 12 = 132 inches
+
+        // Default goal (used when alliance not set - backwards compatibility)
+        public static final double GOAL_X = BLUE_GOAL_X;
+        public static final double GOAL_Y = BLUE_GOAL_Y;
+
+        // ========== DEFAULT TELEOP STARTING POSITIONS ==========
+        // Used when running TeleOp standalone (no Auto first)
+        // Blue Alliance: facing the blue goal (heading 180°)
+        public static final double BLUE_TELEOP_START_X = 49.0;
+        public static final double BLUE_TELEOP_START_Y = 0.0;
+        public static final double BLUE_TELEOP_START_HEADING = 180.0; // degrees
+
+        // Red Alliance: facing the red goal (heading 0°)
+        public static final double RED_TELEOP_START_X = 95.0;
+        public static final double RED_TELEOP_START_Y = 0.0;
+        public static final double RED_TELEOP_START_HEADING = 0.0; // degrees
     }
 
     // ==================== TURRET MOTOR CONSTANTS ====================

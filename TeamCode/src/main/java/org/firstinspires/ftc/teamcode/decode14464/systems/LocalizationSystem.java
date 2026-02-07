@@ -121,8 +121,7 @@ public class LocalizationSystem {
     }
 
     /**
-     * Calibrate position from Limelight AprilTag detection
-     * Uses botpose to correct odometry drift
+     * Calibrate full pose from Limelight AprilTag detection (X, Y, and heading)
      * @param limelightPose The pose from Limelight (can be null if no valid target)
      * @return true if calibration was applied, false if no valid data
      */
@@ -133,6 +132,25 @@ public class LocalizationSystem {
         
         // Apply Limelight pose to correct odometry
         follower.setPose(limelightPose);
+        return true;
+    }
+
+    /**
+     * Calibrate only position (X, Y) from Limelight - keeps heading from odometry.
+     * Use this during TeleOp: odometry heading is reliable, but X/Y can drift.
+     * Limelight corrects position without disturbing the heading.
+     * @param limelightPose The pose from Limelight (only X, Y are used)
+     * @return true if calibration was applied
+     */
+    public boolean calibratePositionOnly(Pose limelightPose) {
+        if (limelightPose == null || follower == null) {
+            return false;
+        }
+        
+        // Keep current heading from odometry, only update X and Y from Limelight
+        double currentHeading = getHeadingRadians();
+        Pose positionOnlyPose = new Pose(limelightPose.getX(), limelightPose.getY(), currentHeading);
+        follower.setPose(positionOnlyPose);
         return true;
     }
 
