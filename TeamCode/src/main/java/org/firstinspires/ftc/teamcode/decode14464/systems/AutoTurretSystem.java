@@ -286,6 +286,17 @@ public class AutoTurretSystem {
     }
 
     /**
+     * Clear the manual offset (reset to 0).
+     * Use this after Limelight corrects robot position - the auto-tracking
+     * calculation should now be accurate, so manual corrections are no longer needed.
+     */
+    public void clearManualOffset() {
+        manualOffsetTicks = 0;
+        previousError = 0;
+        integral = 0;
+    }
+
+    /**
      * Reset combined goal tracking state
      */
     private void resetCombinedGoalTracking() {

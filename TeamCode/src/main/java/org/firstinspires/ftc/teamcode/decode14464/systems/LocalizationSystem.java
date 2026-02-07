@@ -99,12 +99,13 @@ public class LocalizationSystem {
 
     /**
      * Calculate angle to a target point (in degrees, 0-360)
-     * Uses Pedro Pathing coordinate system (0° = UP)
+     * Uses standard math convention: 0° = +X direction (matches Pedro Pathing heading)
+     * Forward = +X, Sideways = +Y
      */
     public double getAngleToPoint(double targetX, double targetY) {
         double dx = targetX - getX();
         double dy = targetY - getY();
-        double angleRad = Math.atan2(dx, dy); // Note: dx, dy for Pedro Pathing
+        double angleRad = Math.atan2(dy, dx); // atan2(dy, dx) → 0° = +X direction
         double angleDeg = Math.toDegrees(angleRad);
         while (angleDeg < 0) angleDeg += 360;
         while (angleDeg >= 360) angleDeg -= 360;

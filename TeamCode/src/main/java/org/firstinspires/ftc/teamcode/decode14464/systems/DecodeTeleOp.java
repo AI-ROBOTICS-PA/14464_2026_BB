@@ -23,7 +23,7 @@ import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
  * - Right Stick X: Rotation
  *
  * GAMEPAD 2 (Operator):
- * - A/Cross: Toggle Alliance BEFORE START only (BLUE=Tag 20, RED=Tag 24)
+ * - A/Cross: Toggle Alliance BEFORE START only | During match: FULL LIMELIGHT RESET (position + clear offset)
  * - X/Square: Toggle Auto-Turret tracking ON/OFF
  * - Y/Triangle: Toggle Auto-Calibration ON/OFF
  * - Left Stick Y: Manual intake control (Up = Intake, Down = Outtake)
@@ -44,8 +44,8 @@ import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
  * Limelight Calibration:
  * ======================
  * - AUTOMATIC: Calibrates continuously when AprilTag visible and robot stationary
- * - MANUAL: Press GP2 RIGHT BUMPER when AprilTag visible for instant calibration
- * - Calibrates BOTH turret pointing AND robot localization position
+ * - GP2 RIGHT BUMPER: Calibrates turret angle (tx) + robot position (keeps manual offset)
+ * - GP2 A/Cross: FULL RESET — corrects position AND clears manual offset (trust auto-tracking)
  * - Uses AprilTag detection to fix any odometry drift or turret offset
  *
  * Hood Presets:
@@ -555,8 +555,31 @@ public class DecodeTeleOp extends OpMode {
         }
         prevGP2Y = gp2YPressed;
 
-        // NOTE: Alliance toggle (GP2 A) is only available during init_loop() BEFORE START.
-        // Alliance never changes during the match. Goal and AprilTag ID are locked at start.
+        // ========== GP2: FULL LIMELIGHT RESET (A/Cross Button) ==========
+        // During match: corrects position from Limelight AND clears manual turret offset.
+        // Use this when Limelight can see the tag and you want to fully trust it.
+        // After this, auto-tracking recalculates purely from the corrected position.
+        boolean gp2APressed = gamepad2.a || gamepad2.cross;
+        if (gp2APressed && !prevGP2A) {
+            if (robot.limelight != null && robot.limelight.hasAllianceTarget()) {
+                // 1. Correct position (X, Y only, keep heading)
+                Pose limelightPose = robot.limelight.getRobotPoseFromAprilTag();
+                if (limelightPose != null && robot.localization != null) {
+                    robot.localization.calibratePositionOnly(limelightPose);
+                }
+                // 2. Clear manual offset — trust auto-tracking from corrected position
+                if (robot.autoTurret != null) {
+                    robot.autoTurret.clearManualOffset();
+                }
+                lastCalibrationStatus = "Full Reset (A)";
+                gamepad2.rumble(400);
+                telemetry.log().add("✅ FULL RESET: Position corrected + offset cleared");
+            } else {
+                gamepad2.rumble(100);
+                telemetry.log().add("❌ No AprilTag visible - cannot reset");
+            }
+        }
+        prevGP2A = gp2APressed;
 
         // ========== AUTOMATIC LIMELIGHT CALIBRATION ==========
         // Auto-calibrate when conditions are good
@@ -1001,7 +1024,7 @@ public class DecodeTeleOp extends OpMode {
         telemetry.addLine("─── GP2 (OPERATOR) ───");
         String allianceStr = robot.limelight != null ? 
             (robot.limelight.getAlliance() == LimelightManager.Alliance.BLUE ? "BLUE" : "RED") : "N/A";
-        telemetry.addData("A/×", "Alliance: " + allianceStr + " (locked)");
+        telemetry.addData("A/×", allianceStr + " | Full LL Reset");
         telemetry.addData("X/□", autoTurretEnabled ? "Turret: GOAL-TRACK" : "Turret: OFF");
         telemetry.addData("Y/△", autoCalibrationEnabled ? "AutoCal: ON" : "AutoCal: OFF");
         telemetry.addData("L Trigger", "HOLD = Position Lock 🔒");
@@ -1010,7 +1033,7 @@ public class DecodeTeleOp extends OpMode {
         telemetry.addData("D-Pad U/D", "Hood Fine");
         telemetry.addData("D-Pad L/R", "Turret Fine");
         telemetry.addData("L Bumper", "Recalibrate");
-        telemetry.addData("R Bumper", "Limelight Cal");
+        telemetry.addData("R Bumper", "Limelight Cal (keep offset)");
         telemetry.addData("Back/Share", "Next Page");
 
         telemetry.addLine();
