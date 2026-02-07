@@ -1044,6 +1044,9 @@ public class DecodeTeleOp extends OpMode {
     @Override
     public void stop() {
         robot.stopAll();
+        // Clear saved turret position so next standalone TeleOp starts fresh.
+        // Without this, the next TeleOp run thinks Auto ran and skips encoder reset.
+        RobotMotors.clearSavedTurretPosition();
         telemetry.addLine("⏹️ TeleOp Stopped");
         telemetry.update();
     }
