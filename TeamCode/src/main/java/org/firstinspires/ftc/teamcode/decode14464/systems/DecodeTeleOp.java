@@ -704,17 +704,18 @@ public class DecodeTeleOp extends OpMode {
         double tx = robot.limelight.getTargetX(); // Horizontal angle to target
         Pose limelightPose = robot.limelight.getRobotPoseFromAprilTag();
         
-        // === TURRET CALIBRATION ===
-        // Use tx (horizontal angle) to calibrate turret pointing
-        if (Math.abs(tx) > 0.5) { // Only calibrate if there's meaningful offset
-            robot.autoTurret.calibrateFromLimelight(tx);
-        }
-        
-        // === POSITION-ONLY CALIBRATION ===
+        // === STEP 1: POSITION CORRECTION (must happen FIRST) ===
         // Correct robot X, Y position from Limelight. Heading is NOT changed.
         // Odometry heading (from IMU) is reliable; only X/Y can drift over time.
         if (limelightPose != null) {
             robot.localization.calibratePositionOnly(limelightPose);
+        }
+        
+        // === STEP 2: TURRET CALIBRATION (uses corrected position) ===
+        // Convert tx into a persistent manualOffset so it survives auto-tracking updates.
+        // Must happen AFTER position correction so the offset is calculated correctly.
+        if (Math.abs(tx) > 0.5) { // Only calibrate if there's meaningful offset
+            robot.autoTurret.calibrateFromLimelight(tx);
         }
         
         // Update status and provide rumble feedback
@@ -727,6 +728,8 @@ public class DecodeTeleOp extends OpMode {
             }
             // Rumble feedback for successful manual calibration
             gamepad2.rumble(300);
+            // Reset auto-calibration cooldown so it doesn't immediately overwrite manual calibration
+            lastAutoCalibrationTime = currentTime;
         } else {
             lastAutoCalibrationTime = currentTime;
             lastCalibrationStatus = String.format("Auto OK (tx=%.1f°)", tx);
@@ -755,6 +758,12 @@ public class DecodeTeleOp extends OpMode {
         double driveInput = Math.abs(gamepad1.left_stick_x) + Math.abs(gamepad1.left_stick_y) + Math.abs(gamepad1.right_stick_x);
         if (driveInput > AUTO_CALIBRATE_VELOCITY_THRESHOLD) {
             return; // Robot is moving too fast
+        }
+        
+        // Check if turret has settled (not still moving from previous calibration)
+        // Calibrating while turret is in motion gives bad tx readings
+        if (robot.autoTurret != null && !robot.autoTurret.isOnTarget()) {
+            return; // Turret still moving - wait until it settles
         }
         
         // Check tx error - only auto-calibrate if we're close but not perfect

@@ -118,9 +118,9 @@ public class RobotConstants {
 
     // ==================== BALL PUSH SERVO CONSTANTS ====================
     public static final class BallPush {
-        public static final double INITIAL_POSITION = 0.49;
+        public static final double INITIAL_POSITION = 0.48;
         public static final double PUSH_POSITION = 0.77;
-        public static final double RETRACT_POSITION = 0.49;
+        public static final double RETRACT_POSITION = 0.48;
 
         public static final long PUSH_DELAY_MS = 200;  // Time to push ball
 

@@ -369,28 +369,42 @@ public class AutoTurretSystem {
     }
 
     /**
-     * Calibrate turret from Limelight AprilTag detection
-     * Uses tx (horizontal angle) to correct turret pointing
+     * Calibrate turret from Limelight AprilTag detection.
+     * Converts the tx offset into a persistent manualOffsetTicks value so the
+     * correction survives auto-tracking recalculations every loop.
+     * 
+     * IMPORTANT: Call this AFTER position correction (calibratePositionOnly) so that
+     * the auto-tracking base calculation uses the corrected robot position.
+     * 
      * @param limelightTx Horizontal angle to target from Limelight (degrees, + = right, - = left)
      * @return true if calibration was applied
      */
     public boolean calibrateFromLimelight(double limelightTx) {
-        if (motors == null || motors.turret == null) {
+        if (motors == null || motors.turret == null || localization == null) {
             return false;
         }
         
-        // If Limelight sees target at tx degrees offset, turret needs to move by that amount
-        // Positive tx = target is to the right = turret needs to turn right (+ encoder)
-        // Negative tx = target is to the left = turret needs to turn left (- encoder)
+        // Calculate where auto-tracking THINKS turret should be (using now-corrected position)
+        double currentHeading = localization.getHeadingDegrees();
+        double fieldAngleToGoal = localization.getAngleToPoint(goalX, goalY);
+        double autoTargetAngle = normalizeAngle(fieldAngleToGoal - currentHeading);
+        double maxRotation = RobotConstants.Turret.MAX_ROTATION_DEGREES;
+        autoTargetAngle = Math.max(-maxRotation, Math.min(maxRotation, autoTargetAngle));
+        double autoTargetTicks = autoTargetAngle * TICKS_PER_DEGREE;
         
-        // Convert tx angle to encoder ticks offset
-        double offsetTicks = limelightTx * TICKS_PER_DEGREE;
+        // The "ideal" position = where turret IS now + tx correction
+        // This is where the turret SHOULD be pointing to hit the tag
+        double currentEncoder = motors.turret.getCurrentPosition();
+        double idealPosition = currentEncoder + limelightTx * TICKS_PER_DEGREE;
         
-        // Adjust target position to account for the offset
-        // Current position + offset = where we should be pointing
-        turretTargetPosition = motors.turret.getCurrentPosition() + offsetTicks;
+        // Store as manualOffset: difference between ideal and auto-calculated target
+        // This persists through every updateCombinedGoalTracking() call
+        manualOffsetTicks = idealPosition - autoTargetTicks;
         
-        // Reset PID state
+        // Set immediate target so PID starts driving there now
+        turretTargetPosition = idealPosition;
+        
+        // Reset PID state for smooth transition
         previousError = 0;
         integral = 0;
         
