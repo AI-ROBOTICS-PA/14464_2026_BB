@@ -140,6 +140,7 @@ public class DecodeTeleOp extends OpMode {
     private String lastCalibrationStatus = "None"; // For telemetry
     private boolean prevGP2Y = false; // For auto-calibration toggle button
     private boolean prevGP2A = false; // For alliance toggle button
+    private boolean prevGP1B = false; // For manual ball advance (sensor broken fallback)
 
     // ========== RUMBLE FEEDBACK ==========
     private boolean wasReadyToShoot = false; // Track state change for rumble
@@ -406,8 +407,31 @@ public class DecodeTeleOp extends OpMode {
             }
         }
 
+        // ========== GP1 B/Circle: MANUAL BALL ADVANCE (Sensor Broken Fallback) ==========
+        // When color sensor is broken, driver uses this to manually tell the system
+        // "a ball was loaded". Increments ballsLoaded + advances servo.
+        // Hold GP1 Left Bumper + B to UNDO (retreat + decrement).
+        // Only works in INTAKE mode.
+        boolean gp1BPressed = gamepad1.b || gamepad1.circle;
+        if (gp1BPressed && !prevGP1B && robot.autoIntake.isIntakeMode()) {
+            if (gamepad1.left_bumper) {
+                // UNDO: retreat intake (decrement ball count)
+                if (robot.autoIntake.manualRetreatIntake()) {
+                    gamepad1.rumble(100);
+                    telemetry.log().add("⬅️ Manual Undo: Balls=" + robot.autoIntake.getBallsLoaded());
+                }
+            } else {
+                // ADVANCE: manual ball loaded (increment ball count)
+                if (robot.autoIntake.manualAdvanceIntake()) {
+                    gamepad1.rumble(200);
+                    telemetry.log().add("➡️ Manual Ball: Balls=" + robot.autoIntake.getBallsLoaded());
+                }
+            }
+        }
+        prevGP1B = gp1BPressed;
+
         // ========== MANUAL TURRET OVERRIDE (D-Pad Left/Right) ==========
-        // D-Pad Left: Move to previous slot (manual retreat)
+        // D-Pad Left: Move to previous slot (servo reposition only, no ball count change)
         if (gamepad1.dpad_left && !prevDpadLeft) {
             robot.autoIntake.moveToPreviousSlot();
             telemetry.addLine("⬅️ Manual: Previous Slot");
@@ -636,10 +660,10 @@ public class DecodeTeleOp extends OpMode {
         // Support both controller types
         boolean rightBumperPressed = gamepad1.right_bumper;
         if (rightBumperPressed && !prevRightBumper) {
-            // Only shoot if in launch mode and not already shooting
+            // Only shoot if in launch mode, not already shooting, and have balls loaded
             if (!robot.autoIntake.isIntakeMode() && !robot.autoShoot.isInProgress()) {
-                // Determine number of balls based on current turret position
-                int ballsToShoot = robot.autoIntake.getCurrentIndex() + 1;
+                // Use actual ball count (detected by sensor), not servo position
+                int ballsToShoot = robot.autoIntake.getBallsLoaded();
                 // Validate: must have at least 1 ball to shoot
                 if (ballsToShoot > 0 && ballsToShoot <= 3) {
                     robot.autoShoot.start(ballsToShoot);
@@ -894,7 +918,7 @@ public class DecodeTeleOp extends OpMode {
         }
         
         // Turret Slot
-        telemetry.addData("Balls Loaded", robot.autoIntake.getCurrentIndex() + 1);
+        telemetry.addData("Balls Loaded", robot.autoIntake.getBallsLoaded());
 
         // Auto-Shoot Status (only if active)
         if (robot.autoShoot.isInProgress()) {
@@ -1023,6 +1047,8 @@ public class DecodeTeleOp extends OpMode {
     private void displayControlsPage() {
         telemetry.addLine("─── GP1 (DRIVER) ───");
         telemetry.addData("A/Cross", "Toggle Mode");
+        telemetry.addData("B/○", "Manual Ball +1 (sensor broken)");
+        telemetry.addData("LB+B", "Manual Ball Undo -1");
         telemetry.addData("R Bumper", "Auto-Shoot");
         telemetry.addData("D-Pad U/D", "Hood Preset");
         telemetry.addData("D-Pad L/R", "Manual Turret");

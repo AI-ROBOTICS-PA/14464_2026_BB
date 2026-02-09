@@ -123,8 +123,10 @@ public class CompleteSystemTest extends OpMode {
         boolean rightBumperPressed = gamepad1.right_bumper;
         if (rightBumperPressed && !prevRightBumper) {
             if (!robot.autoIntake.isIntakeMode() && !robot.autoShoot.isInProgress()) {
-                int ballsToShoot = robot.autoIntake.getCurrentIndex() + 1;
-                robot.autoShoot.start(ballsToShoot);
+                int ballsToShoot = robot.autoIntake.getBallsLoaded();
+                if (ballsToShoot > 0) {
+                    robot.autoShoot.start(ballsToShoot);
+                }
             }
         }
         prevRightBumper = rightBumperPressed;
@@ -166,6 +168,7 @@ public class CompleteSystemTest extends OpMode {
         String modeText = robot.autoIntake.isIntakeMode() ? "🔵 INTAKE" : "🔴 LAUNCH";
         telemetry.addData("Current Mode", modeText);
         telemetry.addData("Turret Servo Slot", robot.autoIntake.getCurrentIndex());
+        telemetry.addData("Balls Loaded", robot.autoIntake.getBallsLoaded());
 
         if (robot.autoIntake.isIntakeMode()) {
             telemetry.addData("Ball Detected", robot.autoIntake.isBallDetected() ? "✓ YES" : "✗ NO");

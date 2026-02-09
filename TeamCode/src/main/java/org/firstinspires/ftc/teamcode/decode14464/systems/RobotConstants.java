@@ -175,6 +175,10 @@ public class RobotConstants {
         public static final String NO_BALL_COLOR_1 = "Black";
         public static final String NO_BALL_COLOR_2 = "None";
 
+        // Valid ball colors (only two possible colors)
+        public static final String BALL_COLOR_BLUE = "Blue";
+        public static final String BALL_COLOR_GREEN = "Green";
+
         // Auto-advance settings
         public static final long COLOR_DEBOUNCE_MS = 100; // Debounce time
     }

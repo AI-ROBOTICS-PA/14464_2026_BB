@@ -137,12 +137,8 @@ public class Auto_BlueFar_TEST extends OpMode {
         }
         
         if (robot.autoIntake != null) {
-            robot.autoIntake.setLaunchMode();
-            if (robot.servos != null && robot.servos.turret_1 != null) {
-                robot.servos.turret_1.setPosition(
-                    RobotConstants.TurretServo.LAUNCH_POSITIONS[RobotConstants.Auto.BALLS_PER_CYCLE - 1]
-                );
-            }
+            robot.autoIntake.setBallsLoaded(RobotConstants.Auto.BALLS_PER_CYCLE); // Tell system balls are pre-loaded
+            robot.autoIntake.setLaunchMode(); // Now positions correctly based on ballsLoaded
         }
         
         buildPaths();

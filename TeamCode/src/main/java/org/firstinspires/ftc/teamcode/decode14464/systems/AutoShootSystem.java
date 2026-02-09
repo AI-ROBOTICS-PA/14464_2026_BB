@@ -16,6 +16,7 @@ public class AutoShootSystem {
     // Auto-shoot state machine
     private enum AutoShootState {
         IDLE,
+        POSITION_TURRET,  // Move turret to correct starting slot before first push
         PUSH,
         WAIT_PUSH,
         RETRACT,
@@ -75,21 +76,24 @@ public class AutoShootSystem {
         ballsShot = 0;
         sensorDetectedCount = 0;
         timeoutUsedCount = 0;
-        state = AutoShootState.PUSH;
+        turretMoved = false;
+
+        // Position turret at the correct starting slot before first push
+        state = AutoShootState.POSITION_TURRET;
         stateStartTime = System.currentTimeMillis();
 
         return true;
     }
 
     /**
-     * Start auto-shoot based on current turret position
-     * Automatically determines number of balls from current index
+     * Start auto-shoot based on actual balls loaded (detected by color sensor).
+     * Uses ballsLoaded count instead of servo position index to avoid desync bugs.
      */
     public boolean startFromCurrentPosition() {
         if (autoIntake == null) return false;
 
-        int currentIndex = autoIntake.getCurrentIndex();
-        int numberOfBalls = currentIndex + 1; // Index 0 = 1 ball, index 1 = 2 balls, index 2 = 3 balls
+        int numberOfBalls = autoIntake.getBallsLoaded();
+        if (numberOfBalls <= 0) return false; // No balls to shoot
 
         return start(numberOfBalls);
     }
@@ -119,6 +123,29 @@ public class AutoShootSystem {
         long elapsed = System.currentTimeMillis() - stateStartTime;
 
         switch (state) {
+            case POSITION_TURRET:
+                // Move turret to the correct starting slot (highest loaded slot)
+                // This ensures we start from the right place even if manual D-Pad moved the servo
+                if (!turretMoved) {
+                    int targetSlot = ballsToShoot - 1;
+                    if (targetSlot >= 0 && targetSlot < RobotConstants.TurretServo.LAUNCH_POSITIONS.length) {
+                        if (autoIntake != null) {
+                            autoIntake.prepareForShooting();
+                        } else if (servos != null && servos.turret_1 != null) {
+                            // Fallback: directly set servo if autoIntake not available
+                            servos.turret_1.setPosition(RobotConstants.TurretServo.LAUNCH_POSITIONS[targetSlot]);
+                        }
+                    }
+                    turretMoved = true;
+                }
+                // Wait for turret servo to reach position before pushing
+                if (elapsed > ADVANCE_DURATION_MS) {
+                    turretMoved = false; // Reset for ADVANCE state use
+                    state = AutoShootState.PUSH;
+                    stateStartTime = System.currentTimeMillis();
+                }
+                break;
+
             case PUSH:
                 // Command servo to push position
                 if (servos != null && servos.ballpush_4 != null) {
@@ -187,7 +214,10 @@ public class AutoShootSystem {
             stateStartTime = System.currentTimeMillis();
             turretMoved = false; // Reset flag for new advance
         } else {
-            // All balls shot!
+            // All balls shot! Reset ball count since turret is now empty
+            if (autoIntake != null) {
+                autoIntake.resetBallCount();
+            }
             state = AutoShootState.IDLE;
         }
     }

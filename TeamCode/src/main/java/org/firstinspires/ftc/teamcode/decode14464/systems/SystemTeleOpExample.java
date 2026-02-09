@@ -151,7 +151,8 @@ public class SystemTeleOpExample extends OpMode {
             // Only start if in LAUNCH mode and not already shooting
             if (!robot.autoIntake.isIntakeMode() && autoShootState == AutoShootState.IDLE) {
                 // Calculate balls to shoot: position 0=1 ball, 1=2 balls, 2=3 balls
-                ballsToShoot = robot.autoIntake.getCurrentIndex() + 1;
+                ballsToShoot = robot.autoIntake.getBallsLoaded();
+                if (ballsToShoot <= 0) ballsToShoot = 1; // Safety: at least 1 if manually triggered
                 ballsShot = 0;
                 sensorDetectedCount = 0;  // Reset diagnostic counters
                 timeoutUsedCount = 0;
