@@ -65,8 +65,8 @@ public class Auto_BlueFar_TEST extends OpMode {
     private boolean prevA = false;
     
     // ========== FIELD POSITIONS ==========
-    private static final Pose START_POSE = new Pose(40, 0, Math.toRadians(90));
-    private static final Pose INTAKE_POSE = new Pose(36, 36, Math.toRadians(90));
+    private static final Pose START_POSE = new Pose(50, 0, Math.toRadians(180));
+    private static final Pose INTAKE_POSE = new Pose(36, 36, Math.toRadians(180));
     
     // ========== SHOOTING PARAMETERS ==========
     private static final double SHOOTER_VELOCITY = RobotConstants.Shooter.HIGH_VELOCITY;

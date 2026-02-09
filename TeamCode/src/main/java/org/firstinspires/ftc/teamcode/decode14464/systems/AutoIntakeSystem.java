@@ -25,6 +25,7 @@ public class AutoIntakeSystem {
     private String[] ballColors = {"None", "None", "None"}; // Color of ball in each slot (0-2)
     private String previousColor = RobotConstants.ColorSensor.NO_BALL_COLOR_1;
     private boolean transitionLocked = false;
+    private long lastBallDetectedTime = 0; // Timestamp of last ball detection (for debounce)
 
     /**
      * Initialize intake system with centralized hardware
@@ -66,17 +67,22 @@ public class AutoIntakeSystem {
             ballsLoaded = Math.min(ballsLoaded + 1, 3);
             advanceToNextSlot(); // Moves servo only (ballsLoaded already incremented above)
             transitionLocked = true;
+            lastBallDetectedTime = System.currentTimeMillis(); // Record when we detected this ball
         }
 
         // Update previous color and lock state
-        if (isNoBall) {
-            // No ball - unlock and reset
+        // DEBOUNCE: Only unlock after COLOR_DEBOUNCE_MS has passed since last detection.
+        // This prevents sensor flicker (ball → no ball → ball) from double-counting.
+        long timeSinceLastDetection = System.currentTimeMillis() - lastBallDetectedTime;
+        if (isNoBall && timeSinceLastDetection > RobotConstants.ColorSensor.COLOR_DEBOUNCE_MS) {
+            // No ball AND enough time has passed - safe to unlock
             transitionLocked = false;
             previousColor = RobotConstants.ColorSensor.NO_BALL_COLOR_1;
-        } else {
-            // Ball present - remember color
+        } else if (!isNoBall) {
+            // Ball present - remember color (keep locked if locked)
             previousColor = currentColor;
         }
+        // If isNoBall but within debounce window: do nothing (stay locked, keep previousColor)
     }
 
     /**

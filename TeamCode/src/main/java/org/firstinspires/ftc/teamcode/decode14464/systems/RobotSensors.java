@@ -10,8 +10,11 @@ import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 import org.firstinspires.ftc.teamcode.decode14464.systems.RobotConstants;
 
 public class RobotSensors {
-    public NormalizedColorSensor color_br;
-    public NormalizedColorSensor color_bl;
+    // Back sensors - COMMENTED OUT to save I2C bandwidth (~6ms/loop)
+    // Uncomment if needed for line-following or field color detection
+    // public NormalizedColorSensor color_br;
+    // public NormalizedColorSensor color_bl;
+    
     public NormalizedColorSensor color_f;
 
     // Touch sensor for ball push detection (Digital Port 1, 3, 5, or 7 only!)
@@ -24,13 +27,14 @@ public class RobotSensors {
 
     public void init(HardwareMap hardwareMap) {
         // Use NormalizedColorSensor for better reliability
-        color_br = hardwareMap.get(NormalizedColorSensor.class, "color_br");
-        color_bl = hardwareMap.get(NormalizedColorSensor.class, "color_bl");
+        // Back sensors commented out - not currently used, saves I2C bus time
+        // color_br = hardwareMap.get(NormalizedColorSensor.class, "color_br");
+        // color_bl = hardwareMap.get(NormalizedColorSensor.class, "color_bl");
         color_f = hardwareMap.get(NormalizedColorSensor.class, "color_f");
 
-        // Apply gain to all sensors (FTC Best Practice)
-        if (color_br != null) color_br.setGain(GAIN);
-        if (color_bl != null) color_bl.setGain(GAIN);
+        // Apply gain to active sensors only
+        // if (color_br != null) color_br.setGain(GAIN);
+        // if (color_bl != null) color_bl.setGain(GAIN);
         if (color_f != null) color_f.setGain(GAIN);
 
         // Initialize touch sensor for ball push detection

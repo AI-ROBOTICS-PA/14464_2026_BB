@@ -52,10 +52,10 @@ public class Auto_BlueFar extends OpMode {
     // All measurements in INCHES using Pedro Pathing coordinate system
     
     // Starting/Launch position - Blue Far Zone
-    private static final Pose START_POSE = new Pose(40, 0, Math.toRadians(90)); // Facing goal (up)
+    private static final Pose START_POSE = new Pose(50, 0, Math.toRadians(180));
     
     // Intake zone - where we pick up balls
-    private static final Pose INTAKE_POSE = new Pose(36, 36, Math.toRadians(90));
+    private static final Pose INTAKE_POSE = new Pose(36, 36, Math.toRadians(180));
     
     // ========== SHOOTING PARAMETERS (from RobotConstants) ==========
     // Far zone = long distance shots = HIGH velocity + LONG RANGE hood
