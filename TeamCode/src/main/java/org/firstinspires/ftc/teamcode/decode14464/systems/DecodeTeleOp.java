@@ -98,6 +98,7 @@ public class DecodeTeleOp extends OpMode {
     private boolean prevDpadRight = false;
     private boolean prevDpadUp = false;
     private boolean prevDpadDown = false;
+    private boolean manualPushActive = false; // Track manual trigger push-release cycle
 
     // ========== SHOOTER VELOCITY SETTINGS ==========
     private static final double SHOOTER_HIGH_VELOCITY = 1450; // Long distance (hold trigger)
@@ -373,17 +374,24 @@ public class DecodeTeleOp extends OpMode {
         // ========== MODE SWITCHING ==========
         // A/Cross: Toggle between Intake and Launch modes
         // Support both controller types: PS4 (cross) and Xbox (a)
+        // BLOCKED during auto-shoot to prevent servo position errors
         boolean aPressed = gamepad1.a || gamepad1.cross;
         if (aPressed && !prevA) {
-            robot.autoIntake.toggleMode();
-
-            // Sync LED color and intake motor with mode
-            if (robot.autoIntake.isIntakeMode()) {
-                robot.led.setIntakeModeColor();
-                robot.autoIntake.startIntakeMotor(); // Start intake motor in intake mode
+            if (robot.autoShoot != null && robot.autoShoot.isInProgress()) {
+                // Block mode switching during auto-shoot - would cause wrong servo positions
+                gamepad1.rumble(100);
+                telemetry.log().add("⚠️ Can't switch mode during auto-shoot!");
             } else {
-                robot.led.setLaunchModeColor();
-                robot.autoIntake.stopIntakeMotor(); // Stop intake motor in launch mode
+                robot.autoIntake.toggleMode();
+
+                // Sync LED color and intake motor with mode
+                if (robot.autoIntake.isIntakeMode()) {
+                    robot.led.setIntakeModeColor();
+                    robot.autoIntake.startIntakeMotor(); // Start intake motor in intake mode
+                } else {
+                    robot.led.setLaunchModeColor();
+                    robot.autoIntake.stopIntakeMotor(); // Stop intake motor in launch mode
+                }
             }
         }
         prevA = aPressed;
@@ -411,9 +419,10 @@ public class DecodeTeleOp extends OpMode {
         // When color sensor is broken, driver uses this to manually tell the system
         // "a ball was loaded". Increments ballsLoaded + advances servo.
         // Hold GP1 Left Bumper + B to UNDO (retreat + decrement).
-        // Only works in INTAKE mode.
+        // Only works in INTAKE mode. BLOCKED during auto-shoot.
         boolean gp1BPressed = gamepad1.b || gamepad1.circle;
-        if (gp1BPressed && !prevGP1B && robot.autoIntake.isIntakeMode()) {
+        if (gp1BPressed && !prevGP1B && robot.autoIntake.isIntakeMode()
+                && (robot.autoShoot == null || !robot.autoShoot.isInProgress())) {
             if (gamepad1.left_bumper) {
                 // UNDO: retreat intake (decrement ball count)
                 if (robot.autoIntake.manualRetreatIntake()) {
@@ -432,16 +441,22 @@ public class DecodeTeleOp extends OpMode {
 
         // ========== MANUAL TURRET OVERRIDE (D-Pad Left/Right) ==========
         // D-Pad Left: Move to previous slot (servo reposition only, no ball count change)
+        // BLOCKED during auto-shoot to prevent interference with shooting sequence
         if (gamepad1.dpad_left && !prevDpadLeft) {
-            robot.autoIntake.moveToPreviousSlot();
-            telemetry.addLine("⬅️ Manual: Previous Slot");
+            if (robot.autoShoot == null || !robot.autoShoot.isInProgress()) {
+                robot.autoIntake.moveToPreviousSlot();
+                telemetry.addLine("⬅️ Manual: Previous Slot");
+            }
         }
         prevDpadLeft = gamepad1.dpad_left;
 
         // D-Pad Right: Move to next slot (manual advance)
+        // BLOCKED during auto-shoot to prevent interference with shooting sequence
         if (gamepad1.dpad_right && !prevDpadRight) {
-            robot.autoIntake.advanceToNextSlot();
-            telemetry.addLine("➡️ Manual: Next Slot");
+            if (robot.autoShoot == null || !robot.autoShoot.isInProgress()) {
+                robot.autoIntake.advanceToNextSlot();
+                telemetry.addLine("➡️ Manual: Next Slot");
+            }
         }
         prevDpadRight = gamepad1.dpad_right;
 
@@ -637,6 +652,7 @@ public class DecodeTeleOp extends OpMode {
 
         // ========== MANUAL BALL LAUNCH (Right Trigger) ==========
         // Right Trigger: Manual ball push servo control (only in launch mode AND when auto-shoot is NOT active)
+        // Tracks push-release cycle to decrement ballsLoaded (squeeze past 0.7, release below 0.3 = 1 ball shot)
         if (robot.servos != null && robot.servos.ballpush_4 != null) {
             if (!robot.autoIntake.isIntakeMode() && !robot.autoShoot.isInProgress()) {
                 // Map trigger (0.0 to 1.0) to servo offset (0.0 to 0.27)
@@ -648,11 +664,29 @@ public class DecodeTeleOp extends OpMode {
                 robot.servos.ballpush_4.setPosition(
                     robot.servos.ballpush_initial_position + servoOffset
                 );
+
+                // Track push-release cycle to decrement ball count
+                if (triggerValue > 0.7) {
+                    // Trigger is fully squeezed - mark push as active
+                    manualPushActive = true;
+                } else if (manualPushActive && triggerValue < 0.3) {
+                    // Trigger was squeezed and now released - one ball was shot
+                    manualPushActive = false;
+                    int currentBalls = robot.autoIntake.getBallsLoaded();
+                    if (currentBalls > 0) {
+                        robot.autoIntake.setBallsLoaded(currentBalls - 1);
+                        gamepad1.rumble(100);
+                        telemetry.log().add("🔫 Manual Shot! Balls=" + robot.autoIntake.getBallsLoaded());
+                    }
+                }
             } else if (robot.autoIntake.isIntakeMode() && !robot.autoShoot.isInProgress()) {
                 // In intake mode AND auto-shoot not active, keep ball push servo at initial position
                 robot.servos.ballpush_4.setPosition(robot.servos.ballpush_initial_position);
+                manualPushActive = false; // Reset tracking when not in launch mode
+            } else {
+                // Auto-shoot IS active - don't touch the servo, let AutoShootSystem control it
+                manualPushActive = false; // Reset tracking during auto-shoot
             }
-            // If auto-shoot IS active, don't touch the servo - let AutoShootSystem control it!
         }
 
         // ========== AUTO-SHOOT ==========
