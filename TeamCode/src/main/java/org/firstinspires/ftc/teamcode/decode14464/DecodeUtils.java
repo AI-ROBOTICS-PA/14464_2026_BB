@@ -200,8 +200,8 @@ public class DecodeUtils {
      * @param power Power to use for centering (typically 0.3)
      */
     public static void resetTurretToCenter(DcMotorEx turretMotor, double power) {
+        turretMotor.setTargetPosition((int) TurretConstants.getCenterEncoderPosition()); // MUST set target before switching mode
         turretMotor.setMode(DcMotor.RunMode.RUN_TO_POSITION);
-        turretMotor.setTargetPosition((int) TurretConstants.getCenterEncoderPosition());
         turretMotor.setPower(Math.abs(power));
     }
 

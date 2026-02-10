@@ -66,31 +66,36 @@ public class RobotMotors {
     public void init(HardwareMap hardwareMap, boolean resetTurretEncoder) {
         // Initialize intake motor
         intake = hardwareMap.get(DcMotor.class, "intake");
-        intake.setDirection(DcMotor.Direction.REVERSE);
+        if (intake != null) {
+            intake.setDirection(DcMotor.Direction.REVERSE);
+        }
 
         // Initialize turret motor with proper configuration
         turret = hardwareMap.get(DcMotorEx.class, "turret");
-        
-        if (resetTurretEncoder) {
-            // Reset encoder to 0 (normal init)
-            turret.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        if (turret != null) {
+            if (resetTurretEncoder) {
+                // Reset encoder to 0 (normal init)
+                turret.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+            }
+            // If not resetting, encoder keeps its current value
+            
+            turret.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+            turret.setDirection(DcMotor.Direction.FORWARD);
+            turret.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         }
-        // If not resetting, encoder keeps its current value
-        
-        turret.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-        turret.setDirection(DcMotor.Direction.FORWARD);
-        turret.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
         // Initialize the flywheel motor (using your "shooter" motor)
         flywheelMotor = hardwareMap.get(DcMotorEx.class, "shooter");
-        flywheelMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        flywheelMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-        flywheelMotor.setDirection(DcMotor.Direction.FORWARD); // Change to REVERSE if needed
-        flywheelMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        if (flywheelMotor != null) {
+            flywheelMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+            flywheelMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+            flywheelMotor.setDirection(DcMotor.Direction.FORWARD); // Change to REVERSE if needed
+            flywheelMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
-        // Set initial PIDF coefficients (P, I, D, F)
-        PIDFCoefficients pidfCoefficients = new PIDFCoefficients(300, 0, 0, 13.65);
-        flywheelMotor.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER, pidfCoefficients);
+            // Set initial PIDF coefficients (P, I, D, F)
+            PIDFCoefficients pidfCoefficients = new PIDFCoefficients(300, 0, 0, 13.65);
+            flywheelMotor.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER, pidfCoefficients);
+        }
     }
 
     /**
@@ -98,41 +103,42 @@ public class RobotMotors {
      * @param curTargetVelocity Target velocity (e.g., 1400-1600 for typical shooter)
      */
     public void startShooter(double curTargetVelocity) {
-        flywheelMotor.setVelocity(curTargetVelocity);
+        if (flywheelMotor != null) flywheelMotor.setVelocity(curTargetVelocity);
     }
 
     /**
      * Get current shooter velocity in ticks per second
-     * @return Current velocity
+     * @return Current velocity (0 if motor unavailable)
      */
     public double getShooterVelocity() {
-        return flywheelMotor.getVelocity();
+        return flywheelMotor != null ? flywheelMotor.getVelocity() : 0;
     }
 
     /**
      * Stop shooter motor
      */
     public void stopShooter() {
-        flywheelMotor.setVelocity(0);
+        if (flywheelMotor != null) flywheelMotor.setVelocity(0);
     }
 
     /**
      * Check if shooter has reached target velocity (within tolerance)
      * @param targetVelocity Target velocity in ticks per second
      * @param tolerance Acceptable error (e.g., 50 ticks/sec)
-     * @return true if within tolerance
+     * @return true if within tolerance (false if motor unavailable)
      */
     public boolean isShooterAtVelocity(double targetVelocity, double tolerance) {
+        if (flywheelMotor == null) return false;
         double currentVelocity = flywheelMotor.getVelocity();
         return Math.abs(currentVelocity - targetVelocity) <= tolerance;
     }
 
     public void startIntake(){
-        intake.setPower(1);
+        if (intake != null) intake.setPower(1);
     }
 
     public void stopIntake(){
-        intake.setPower(0);
+        if (intake != null) intake.setPower(0);
     }
 
     /**
@@ -140,7 +146,7 @@ public class RobotMotors {
      * @param power Motor power (-1.0 to 1.0, positive = intake, negative = outtake)
      */
     public void setIntakePower(double power) {
-        intake.setPower(power);
+        if (intake != null) intake.setPower(power);
     }
 
 

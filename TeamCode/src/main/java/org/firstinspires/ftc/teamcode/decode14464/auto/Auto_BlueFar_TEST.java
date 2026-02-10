@@ -223,7 +223,9 @@ public class Auto_BlueFar_TEST extends OpMode {
         }
         
         // Start flywheel
-        robot.shooting.startShooter(SHOOTER_VELOCITY);
+        if (robot.shooting != null) {
+            robot.shooting.startShooter(SHOOTER_VELOCITY);
+        }
         
         // Reset gamepad tracking for run loop
         prevA = gamepad1.a || gamepad1.cross;
@@ -233,7 +235,7 @@ public class Auto_BlueFar_TEST extends OpMode {
     public void loop() {
         // Update all robot systems
         robot.updateAll();
-        follower.update();
+        if (follower != null) follower.update();
         
         // Handle manual advance
         if (currentState == AutoState.PAUSED) {

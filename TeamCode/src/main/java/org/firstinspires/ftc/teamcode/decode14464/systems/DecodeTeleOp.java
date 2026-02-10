@@ -336,29 +336,28 @@ public class DecodeTeleOp extends OpMode {
         }
 
         // ========== POSITION LOCK (GP2 Left Trigger HOLD) ==========
-        // Hold Left Trigger to lock position - resists being pushed by other robots
+        // DISABLED: holdPoint() causes robot to move instead of stay still.
+        // TODO: Fix using motor brake mode instead of holdPoint()
+        /*
         boolean wasLocked = positionLockEnabled;
         positionLockEnabled = gamepad2.left_trigger > 0.5;
         
         if (positionLockEnabled && !wasLocked) {
-            // ENABLE: Just started locking - capture position and break following
             lockedPose = robot.localization.getFollower().getPose();
             robot.localization.getFollower().breakFollowing();
-            gamepad2.rumble(100); // Short rumble to confirm lock
+            gamepad2.rumble(100);
         } else if (!positionLockEnabled && wasLocked) {
-            // DISABLE: Just released lock - resume normal teleop drive
             robot.localization.getFollower().startTeleopDrive();
             lockedPose = null;
         }
         
-        // Update position lock if currently enabled
         if (positionLockEnabled && lockedPose != null) {
-            // Continuously command robot to hold position
             robot.localization.getFollower().holdPoint(
                 new com.pedropathing.geometry.BezierPoint(lockedPose),
-                Math.toRadians(5) // 5 degree heading tolerance
+                Math.toRadians(5)
             );
         }
+        */
 
         // ========== DRIVE CONTROL ==========
         // Disable normal drive when position lock is active

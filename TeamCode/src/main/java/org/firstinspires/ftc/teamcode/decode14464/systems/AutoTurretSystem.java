@@ -652,8 +652,8 @@ public class AutoTurretSystem {
 
         disable(); // Disable auto-tracking
 
+        motors.turret.setTargetPosition(0); // MUST set target before switching mode
         motors.turret.setMode(DcMotor.RunMode.RUN_TO_POSITION);
-        motors.turret.setTargetPosition(0);
         motors.turret.setPower(0.3);
     }
     
@@ -674,9 +674,9 @@ public class AutoTurretSystem {
         // Convert to encoder ticks
         int targetTicks = (int)(angleDegrees * TICKS_PER_DEGREE);
         
-        // Move to position
-        motors.turret.setMode(DcMotor.RunMode.RUN_TO_POSITION);
+        // Move to position (MUST set target before switching to RUN_TO_POSITION)
         motors.turret.setTargetPosition(targetTicks);
+        motors.turret.setMode(DcMotor.RunMode.RUN_TO_POSITION);
         motors.turret.setPower(0.5); // Faster than reset for auto
     }
     
