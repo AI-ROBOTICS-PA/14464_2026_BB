@@ -151,6 +151,7 @@ public class DecodeTeleOp extends OpMode {
     // Locks robot position to resist being pushed by other robots during shooting
     private boolean positionLockEnabled = false;
     private com.pedropathing.geometry.Pose lockedPose = null;
+    private com.pedropathing.follower.Follower follower = null; // Cached follower reference
 
     // ========== TELEMETRY PAGES ==========
     private int telemetryPage = 0; // 0=Essential, 1=Details, 2=Controls
@@ -277,9 +278,14 @@ public class DecodeTeleOp extends OpMode {
             robot.localization.setPose(new Pose(startX, startY, Math.toRadians(startHeadingDeg)));
         }
 
+        // Cache follower reference once (avoid repeated getFollower() calls)
+        if (robot.localization != null) {
+            follower = robot.localization.getFollower();
+        }
+        
         // Start TeleOp driving
-        if (robot.localization != null && robot.localization.getFollower() != null) {
-            robot.localization.getFollower().startTeleopDrive();
+        if (follower != null) {
+            follower.startTeleopDrive();
         }
 
         // Start shooter motor at current velocity mode
@@ -336,33 +342,35 @@ public class DecodeTeleOp extends OpMode {
         }
 
         // ========== POSITION LOCK (GP2 Left Trigger HOLD) ==========
-        // DISABLED: holdPoint() causes robot to move instead of stay still.
-        // TODO: Fix using motor brake mode instead of holdPoint()
-        /*
-        boolean wasLocked = positionLockEnabled;
-        positionLockEnabled = gamepad2.left_trigger > 0.5;
-        
-        if (positionLockEnabled && !wasLocked) {
-            lockedPose = robot.localization.getFollower().getPose();
-            robot.localization.getFollower().breakFollowing();
-            gamepad2.rumble(100);
-        } else if (!positionLockEnabled && wasLocked) {
-            robot.localization.getFollower().startTeleopDrive();
-            lockedPose = null;
+        // Hold Left Trigger to lock position - resists being pushed by other robots
+        // Uses cached follower reference (same approach as working Decode_Teleop)
+        if (follower != null) {
+            boolean wasLocked = positionLockEnabled;
+            positionLockEnabled = gamepad2.left_trigger > 0.5;
+            
+            if (positionLockEnabled && !wasLocked) {
+                // ENABLE: capture position and break following
+                lockedPose = follower.getPose();
+                follower.breakFollowing();
+                gamepad2.rumble(100);
+            } else if (!positionLockEnabled && wasLocked) {
+                // DISABLE: resume normal teleop drive
+                follower.startTeleopDrive();
+                lockedPose = null;
+            }
+            
+            if (positionLockEnabled && lockedPose != null) {
+                follower.holdPoint(
+                    new com.pedropathing.geometry.BezierPoint(lockedPose),
+                    Math.toRadians(5)
+                );
+            }
         }
-        
-        if (positionLockEnabled && lockedPose != null) {
-            robot.localization.getFollower().holdPoint(
-                new com.pedropathing.geometry.BezierPoint(lockedPose),
-                Math.toRadians(5)
-            );
-        }
-        */
 
         // ========== DRIVE CONTROL ==========
         // Disable normal drive when position lock is active
-        if (!positionLockEnabled) {
-            robot.localization.getFollower().setTeleOpDrive(
+        if (!positionLockEnabled && follower != null) {
+            follower.setTeleOpDrive(
                 -gamepad1.left_stick_y,
                 -gamepad1.left_stick_x,
                 -gamepad1.right_stick_x,
