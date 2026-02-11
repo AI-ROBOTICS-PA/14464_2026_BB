@@ -15,18 +15,30 @@ import org.firstinspires.ftc.teamcode.decode14464.systems.RobotSystem;
 /**
  * TEST VERSION: Auto Blue Far - Phase-by-Phase Testing
  * 
+ * SEQUENCE (8 steps):
+ *   Step 0: Begin on initial pose (50, 7.5) heading 180°
+ *   Step 1: Move turret to goal angle
+ *   Step 2: Auto-shoot 3 preloaded balls
+ *   Step 3: Drive to intake position (36, 36)
+ *   Step 4: Start auto intake motor
+ *   Step 5: Drive forward to X=10 while intaking to sweep up 3 balls
+ *   Step 6: Return to start/launch position (50, 7.5)
+ *   Step 7: Auto-shoot 3 newly intaked balls
+ *   Step 8: Drive to park position (24, 24)
+ * 
  * DURING INIT:
  * - D-Pad Up/Down: Select which phase to STOP after
  * - A/Cross: Toggle "Manual Advance" mode (step through states one by one)
  * 
  * PHASES:
- * 1. INIT_TURRET - Just move turret to initial position
- * 2. FIRST_SHOOT - Turret + Flywheel + First 3-ball shoot
- * 3. DRIVE_INTAKE - Drive to intake zone
- * 4. INTAKE - Intake balls
- * 5. DRIVE_LAUNCH - Return to launch zone
- * 6. SECOND_SHOOT - Final 3-ball shoot
- * 7. COMPLETE - Full auto (no stop)
+ * 1. INIT_TURRET - Move turret to initial goal angle
+ * 2. FIRST_SHOOT - Flywheel spinup + auto-shoot 3 preloaded balls
+ * 3. DRIVE_INTAKE - Drive to intake zone (36, 36)
+ * 4. INTAKE - Forward sweep to X=10 while intaking (stops at 3 balls)
+ * 5. DRIVE_LAUNCH - Return to launch position
+ * 6. SECOND_SHOOT - Auto-shoot 3 intaked balls
+ * 7. PARK - Drive to park position
+ * 8. COMPLETE - Full auto (no stop)
  * 
  * DURING RUN (if Manual Advance ON):
  * - Press A/Cross to advance to next state
@@ -46,10 +58,11 @@ public class Auto_BlueFar_TEST extends OpMode {
         INIT_TURRET("1. Init Turret Only"),
         FIRST_SHOOT("2. First Shooting"),
         DRIVE_INTAKE("3. Drive to Intake"),
-        INTAKE("4. Intake Balls"),
+        INTAKE("4. Intake Balls (forward sweep)"),
         DRIVE_LAUNCH("5. Drive to Launch"),
         SECOND_SHOOT("6. Second Shooting"),
-        COMPLETE("7. Full Auto (no stop)");
+        PARK("7. Park"),
+        COMPLETE("8. Full Auto (no stop)");
         
         final String displayName;
         TestPhase(String name) { this.displayName = name; }
@@ -68,6 +81,10 @@ public class Auto_BlueFar_TEST extends OpMode {
     // Robot is 18x15 inches. Pose = center. Y offset = 15/2 = 7.5 (side against bottom wall)
     private static final Pose START_POSE = new Pose(50, 7.5, Math.toRadians(180));
     private static final Pose INTAKE_POSE = new Pose(36, 36, Math.toRadians(180));
+    // Step 5: Robot drives forward (heading 180° = -X direction) while intaking to sweep up balls
+    private static final Pose INTAKE_FORWARD_POSE = new Pose(10, 36, Math.toRadians(180));
+    // Step 8: Park position after second shoot (TUNE THIS for your field)
+    private static final Pose PARK_POSE = new Pose(24, 24, Math.toRadians(180));
     
     // ========== SHOOTING PARAMETERS ==========
     private static final double SHOOTER_VELOCITY = RobotConstants.Shooter.HIGH_VELOCITY;
@@ -82,29 +99,34 @@ public class Auto_BlueFar_TEST extends OpMode {
         MOVE_TURRET_INITIAL,
         WAIT_TURRET_INITIAL,
         
-        // Phase 2: First Shoot
+        // Phase 2: First Shoot (preloaded 3 balls)
         WAIT_SHOOTER_READY_1,
         WAIT_TURRET_AIM_1,
         SHOOT_SEQUENCE_1,
         WAIT_SHOOT_COMPLETE_1,
         
-        // Phase 3: Drive to Intake
+        // Phase 3: Drive to Intake Zone
         DRIVE_TO_INTAKE,
         WAIT_ARRIVE_INTAKE,
         
-        // Phase 4: Intake
-        INTAKING,
+        // Phase 4: Intake - drive forward while intaking to sweep up balls
+        INTAKE_FORWARD,         // Start forward sweep with intake running
+        WAIT_INTAKE_COMPLETE,   // Wait for 3 balls OR reached X=10 OR timeout
         
-        // Phase 5: Drive to Launch
+        // Phase 5: Drive back to Launch Position
         DRIVE_TO_LAUNCH,
         WAIT_ARRIVE_LAUNCH,
         
-        // Phase 6: Second Shoot
+        // Phase 6: Second Shoot (3 newly intaked balls)
         WAIT_TURRET_AIM_2,
         SHOOT_SEQUENCE_2,
         WAIT_SHOOT_COMPLETE_2,
         
-        // Phase 7: Complete
+        // Phase 7: Park
+        DRIVE_TO_PARK,
+        WAIT_ARRIVE_PARK,
+        
+        // Done
         COMPLETE,
         
         // Test states
@@ -116,8 +138,10 @@ public class Auto_BlueFar_TEST extends OpMode {
     private AutoState pausedFromState = null;  // Track where we paused from
     
     // ========== PATHS ==========
-    private Path pathToIntake;
-    private Path pathToLaunch;
+    private Path pathToIntake;          // START_POSE → INTAKE_POSE
+    private Path pathIntakeForward;     // INTAKE_POSE → INTAKE_FORWARD_POSE (slow sweep)
+    private Path pathToLaunch;          // INTAKE_FORWARD_POSE → START_POSE
+    private Path pathToPark;            // START_POSE → PARK_POSE
     
     // ========== LIFECYCLE METHODS ==========
     
@@ -269,11 +293,22 @@ public class Auto_BlueFar_TEST extends OpMode {
     // ========== PATH BUILDING ==========
     
     private void buildPaths() {
+        // Step 3: Drive from start to intake zone
         pathToIntake = new Path(new BezierLine(START_POSE, INTAKE_POSE));
         pathToIntake.setLinearHeadingInterpolation(START_POSE.getHeading(), INTAKE_POSE.getHeading());
         
-        pathToLaunch = new Path(new BezierLine(INTAKE_POSE, START_POSE));
-        pathToLaunch.setLinearHeadingInterpolation(INTAKE_POSE.getHeading(), START_POSE.getHeading());
+        // Step 5: Forward sweep to pick up balls (INTAKE_POSE → X=10)
+        // Heading stays constant at 180° throughout the sweep
+        pathIntakeForward = new Path(new BezierLine(INTAKE_POSE, INTAKE_FORWARD_POSE));
+        pathIntakeForward.setConstantHeadingInterpolation(INTAKE_POSE.getHeading());
+        
+        // Step 6: Return from intake area back to launch position
+        pathToLaunch = new Path(new BezierLine(INTAKE_FORWARD_POSE, START_POSE));
+        pathToLaunch.setLinearHeadingInterpolation(INTAKE_FORWARD_POSE.getHeading(), START_POSE.getHeading());
+        
+        // Step 8: Drive to park position
+        pathToPark = new Path(new BezierLine(START_POSE, PARK_POSE));
+        pathToPark.setLinearHeadingInterpolation(START_POSE.getHeading(), PARK_POSE.getHeading());
     }
     
     // ========== STATE MACHINE ==========
@@ -348,11 +383,13 @@ public class Auto_BlueFar_TEST extends OpMode {
                 }
                 break;
                 
-            // ==================== PHASE 3: DRIVE TO INTAKE ====================
+            // ==================== PHASE 3: DRIVE TO INTAKE ZONE ====================
                 
             case DRIVE_TO_INTAKE:
+                // Switch to intake mode and start intake motor while driving
                 if (robot.autoIntake != null) {
                     robot.autoIntake.setIntakeMode();
+                    robot.autoIntake.resetBallCount();  // Reset count for new intake cycle
                     robot.autoIntake.startIntakeMotor();
                 }
                 if (robot.led != null) {
@@ -368,15 +405,30 @@ public class Auto_BlueFar_TEST extends OpMode {
                         if (robot.autoIntake != null) robot.autoIntake.stopIntakeMotor();
                         currentState = AutoState.PHASE_COMPLETE;
                     } else {
-                        transitionTo(AutoState.INTAKING);
+                        transitionTo(AutoState.INTAKE_FORWARD);
                     }
                 }
                 break;
                 
-            // ==================== PHASE 4: INTAKE ====================
+            // ==================== PHASE 4: INTAKE FORWARD SWEEP ====================
+            // Robot drives forward from INTAKE_POSE toward X=10 while intake runs
+            // Stops when: 3 balls loaded OR reached forward position OR timeout
                 
-            case INTAKING:
-                if (elapsed > RobotConstants.Auto.INTAKE_DURATION) {
+            case INTAKE_FORWARD:
+                // Intake motor should already be running from DRIVE_TO_INTAKE
+                follower.followPath(pathIntakeForward);
+                transitionTo(AutoState.WAIT_INTAKE_COMPLETE);
+                break;
+                
+            case WAIT_INTAKE_COMPLETE:
+                // Check if we've collected all 3 balls
+                boolean ballsFull = (robot.autoIntake != null && 
+                    robot.autoIntake.getBallsLoaded() >= RobotConstants.Auto.BALLS_PER_CYCLE);
+                boolean pathDone = !follower.isBusy();
+                boolean timedOut = elapsed > RobotConstants.Auto.INTAKE_FORWARD_TIMEOUT;
+                
+                if (ballsFull || pathDone || timedOut) {
+                    // Stop intake and switch to launch mode
                     if (robot.autoIntake != null) {
                         robot.autoIntake.stopIntakeMotor();
                         robot.autoIntake.setLaunchMode();
@@ -392,7 +444,7 @@ public class Auto_BlueFar_TEST extends OpMode {
                 }
                 break;
                 
-            // ==================== PHASE 5: DRIVE TO LAUNCH ====================
+            // ==================== PHASE 5: DRIVE BACK TO LAUNCH ====================
                 
             case DRIVE_TO_LAUNCH:
                 follower.followPath(pathToLaunch);
@@ -426,10 +478,31 @@ public class Auto_BlueFar_TEST extends OpMode {
             case WAIT_SHOOT_COMPLETE_2:
                 if (!robot.autoShoot.isInProgress()) {
                     robot.shooting.stopShooter();
-                    currentState = AutoState.COMPLETE;
+                    if (stopAfterPhase == TestPhase.SECOND_SHOOT) {
+                        currentState = AutoState.PHASE_COMPLETE;
+                    } else {
+                        transitionTo(AutoState.DRIVE_TO_PARK);
+                    }
                 } else if (elapsed > RobotConstants.Auto.SHOOT_SEQUENCE_TIMEOUT) {
                     robot.autoShoot.stop();
                     robot.shooting.stopShooter();
+                    if (stopAfterPhase == TestPhase.SECOND_SHOOT) {
+                        currentState = AutoState.PHASE_COMPLETE;
+                    } else {
+                        transitionTo(AutoState.DRIVE_TO_PARK);
+                    }
+                }
+                break;
+                
+            // ==================== PHASE 7: PARK ====================
+                
+            case DRIVE_TO_PARK:
+                follower.followPath(pathToPark);
+                transitionTo(AutoState.WAIT_ARRIVE_PARK);
+                break;
+                
+            case WAIT_ARRIVE_PARK:
+                if (!follower.isBusy() || elapsed > RobotConstants.Auto.PARK_TIMEOUT) {
                     currentState = AutoState.COMPLETE;
                 }
                 break;
@@ -535,9 +608,14 @@ public class Auto_BlueFar_TEST extends OpMode {
                 robot.autoShoot.getBallsToShoot());
         }
         
-        // Mode
+        // Mode & Ball Count
         if (robot.autoIntake != null) {
             telemetry.addData("Mode", robot.autoIntake.isIntakeMode() ? "🔵 INTAKE" : "🔴 LAUNCH");
+            telemetry.addData("Balls Loaded", "%d / %d", 
+                robot.autoIntake.getBallsLoaded(), RobotConstants.Auto.BALLS_PER_CYCLE);
+            if (robot.autoIntake.getBallsLoaded() > 0) {
+                telemetry.addData("Ball Colors", robot.autoIntake.getBallColorSummary());
+            }
         }
         
         // Path status

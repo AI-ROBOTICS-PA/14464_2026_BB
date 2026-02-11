@@ -214,19 +214,23 @@ public class RobotConstants {
     }
     
     // ==================== AUTONOMOUS TIMING ====================
+    // TIGHTENED to fit within 30-second auto period
+    // Worst-case total: ~25s (5s buffer)
     public static final class Auto {
         // Shooter/turret timing
-        public static final double SHOOTER_SPINUP_SECONDS = 1.5;    // Time to spin up flywheel
-        public static final double TURRET_AIM_TIMEOUT = 2.0;        // Max time to wait for turret to aim
+        public static final double SHOOTER_SPINUP_SECONDS = 1.0;    // Flywheel starts in start(), has head start
+        public static final double TURRET_AIM_TIMEOUT = 1.5;        // Max time to wait for turret to aim
         
-        // Shooting sequence
-        public static final double SHOOT_SEQUENCE_TIMEOUT = 4.0;    // Max time for 3-ball sequence
+        // Shooting sequence (3 balls @ ~300ms interval + push = ~1.5s actual)
+        public static final double SHOOT_SEQUENCE_TIMEOUT = 3.0;    // Max time for 3-ball sequence
         
         // Intake timing
-        public static final double INTAKE_DURATION = 3.0;           // Time to intake balls
+        public static final double INTAKE_DURATION = 3.0;           // Time to intake balls (legacy)
+        public static final double INTAKE_FORWARD_TIMEOUT = 4.0;    // Max time for intake forward sweep (~26")
         
         // Path timing
-        public static final double PATH_TIMEOUT = 5.0;              // Max time for path completion
+        public static final double PATH_TIMEOUT = 3.5;              // Max time for drive paths (~30-50")
+        public static final double PARK_TIMEOUT = 3.0;              // Max time for park path (~31")
         
         // Number of balls
         public static final int BALLS_PER_CYCLE = 3;                // Balls loaded/shot per cycle
@@ -241,7 +245,7 @@ public class RobotConstants {
         public static final double RED_NEAR_INITIAL_TURRET_ANGLE = -30.0;  // Red near zone (mirror)
         
         // Time to wait for turret to reach initial position
-        public static final double INITIAL_TURRET_MOVE_TIMEOUT = 1.0;      // seconds
+        public static final double INITIAL_TURRET_MOVE_TIMEOUT = 0.8;      // seconds
         
         // Settling time after turret reaches position before enabling auto-tracking
         public static final double TURRET_SETTLING_TIME = 0.2;             // seconds (200ms)
