@@ -6,6 +6,14 @@ package org.firstinspires.ftc.teamcode.decode14464.systems;
  */
 public class RobotConstants {
 
+    // ==================== ROBOT DIMENSIONS ====================
+    public static final class RobotDimensions {
+        public static final double LENGTH = 18.0;  // inches (front-to-back)
+        public static final double WIDTH = 15.0;   // inches (side-to-side)
+        public static final double HALF_LENGTH = LENGTH / 2.0;  // 9.0"
+        public static final double HALF_WIDTH = WIDTH / 2.0;    // 7.5"
+    }
+
     // ==================== FIELD CONSTANTS ====================
     public static final class Field {
         public static final double WIDTH = 144.0;  // inches (12 feet)
@@ -25,14 +33,15 @@ public class RobotConstants {
 
         // ========== DEFAULT TELEOP STARTING POSITIONS ==========
         // Used when running TeleOp standalone (no Auto first)
+        // Pose = robot center. Y offset = HALF_WIDTH (side against bottom wall at 0°/180° heading)
         // Blue Alliance: facing the blue goal (heading 180°)
         public static final double BLUE_TELEOP_START_X = 49.0;
-        public static final double BLUE_TELEOP_START_Y = 0.0;
+        public static final double BLUE_TELEOP_START_Y = RobotDimensions.HALF_WIDTH; // 7.5" (side against wall)
         public static final double BLUE_TELEOP_START_HEADING = 180.0; // degrees
 
         // Red Alliance: facing the red goal (heading 0°)
         public static final double RED_TELEOP_START_X = 95.0;
-        public static final double RED_TELEOP_START_Y = 0.0;
+        public static final double RED_TELEOP_START_Y = RobotDimensions.HALF_WIDTH; // 7.5" (side against wall)
         public static final double RED_TELEOP_START_HEADING = 0.0; // degrees
     }
 

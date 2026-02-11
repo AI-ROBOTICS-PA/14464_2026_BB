@@ -52,6 +52,8 @@ public class Auto_BlueNear extends OpMode {
     // All measurements in INCHES using Pedro Pathing coordinate system
     
     // Starting/Launch position - Blue Near Zone
+    // Robot is 18x15. At 45° heading, center needs ~11.7" clearance from walls.
+    // X=12 (12" from left wall), Y=132 (12" from top wall) — tight but fits.
     private static final Pose START_POSE = new Pose(12, 132, Math.toRadians(45)); // Facing goal
     
     // Intake zone - where we pick up balls

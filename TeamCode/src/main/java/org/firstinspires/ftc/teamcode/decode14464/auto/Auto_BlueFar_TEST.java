@@ -65,7 +65,8 @@ public class Auto_BlueFar_TEST extends OpMode {
     private boolean prevA = false;
     
     // ========== FIELD POSITIONS ==========
-    private static final Pose START_POSE = new Pose(50, 0, Math.toRadians(180));
+    // Robot is 18x15 inches. Pose = center. Y offset = 15/2 = 7.5 (side against bottom wall)
+    private static final Pose START_POSE = new Pose(50, 7.5, Math.toRadians(180));
     private static final Pose INTAKE_POSE = new Pose(36, 36, Math.toRadians(180));
     
     // ========== SHOOTING PARAMETERS ==========

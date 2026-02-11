@@ -101,10 +101,11 @@ public class DecodeTeleOp extends OpMode {
     private boolean manualPushActive = false; // Track manual trigger push-release cycle
 
     // ========== SHOOTER VELOCITY SETTINGS ==========
-    private static final double SHOOTER_HIGH_VELOCITY = 1450; // Long distance (hold trigger)
-    private static final double SHOOTER_LOW_VELOCITY = 1100;  // Short distance (default)
+    private static final double SHOOTER_HIGH_VELOCITY = 1450;   // Long distance (trigger > 50%)
+    private static final double SHOOTER_MID_VELOCITY = 1160;    // Mid-point shooting (trigger < 50%)
+    private static final double SHOOTER_LOW_VELOCITY = 1100;    // Short distance (default, no trigger)
     private double currentShooterVelocity = SHOOTER_LOW_VELOCITY; // Start at LOW
-    private boolean isHighVelocityMode = false; // Start at LOW
+    private String velocityModeName = "LOW"; // For telemetry
 
     // ========== HOOD PRESET POSITIONS ==========
     // 3 preset positions: LONG (flat), MEDIUM, SHORT (angled up)
@@ -206,7 +207,7 @@ public class DecodeTeleOp extends OpMode {
         telemetry.addLine();
         telemetry.addData("Current Mode", "LAUNCH (ready to shoot)");
         telemetry.addData("Hood", HOOD_POSITION_NAMES[currentHoodIndex]);
-        telemetry.addData("Velocity", isHighVelocityMode ? "HIGH" : "LOW");
+        telemetry.addData("Velocity", velocityModeName);
         telemetry.update();
     }
 
@@ -254,7 +255,7 @@ public class DecodeTeleOp extends OpMode {
         telemetry.addLine(">>> Press START when ready <<<");
         telemetry.addLine();
         telemetry.addData("Hood", HOOD_POSITION_NAMES[currentHoodIndex]);
-        telemetry.addData("Velocity", isHighVelocityMode ? "HIGH" : "LOW");
+        telemetry.addData("Velocity", velocityModeName);
         telemetry.update();
     }
 
@@ -313,7 +314,7 @@ public class DecodeTeleOp extends OpMode {
         String allianceStr = isRed ? "RED" : "BLUE";
         telemetry.addLine("🚀 TeleOp Started!");
         telemetry.addLine("✅ Alliance: " + allianceStr);
-        telemetry.addLine("✅ Shooter Running at " + currentShooterVelocity + " (" + (isHighVelocityMode ? "HIGH" : "LOW") + ")");
+        telemetry.addLine("✅ Shooter Running at " + currentShooterVelocity + " (" + velocityModeName + ")");
         telemetry.addLine("✅ Hood at " + HOOD_POSITION_NAMES[currentHoodIndex]);
         telemetry.addLine("✅ Auto-Turret: GOAL TRACKING (GP2 X to toggle)");
         telemetry.addLine("ℹ️ Intake Motor: OFF (switch to INTAKE mode to enable)");
@@ -644,16 +645,27 @@ public class DecodeTeleOp extends OpMode {
             telemetry.addLine("⚠️ EMERGENCY STOP ACTIVATED!");
         }
 
-        // ========== SHOOTER VELOCITY (Left Trigger = HIGH) ==========
-        // Default: LOW velocity | Hold Left Trigger: HIGH velocity
+        // ========== SHOOTER VELOCITY (Left Trigger = 3 levels) ==========
+        // No trigger: LOW (1100) | Partial press: MID (1160) | Near full press (>70%): HIGH (1450)
         // Momentary - releases back to LOW when trigger released
-        boolean leftTriggerHeld = gamepad1.left_trigger > 0.5;
-        double targetVelocity = leftTriggerHeld ? SHOOTER_HIGH_VELOCITY : SHOOTER_LOW_VELOCITY;
+        double leftTriggerValue = gamepad1.left_trigger;
+        double targetVelocity;
+        String targetModeName;
+        if (leftTriggerValue > 0.7) {
+            targetVelocity = SHOOTER_HIGH_VELOCITY;  // 1450
+            targetModeName = "HIGH";
+        } else if (leftTriggerValue > 0.1) {
+            targetVelocity = SHOOTER_MID_VELOCITY;   // 1160
+            targetModeName = "MID";
+        } else {
+            targetVelocity = SHOOTER_LOW_VELOCITY;   // 1100
+            targetModeName = "LOW";
+        }
         
         // Only update if velocity changed (avoid spamming motor commands)
         if (targetVelocity != currentShooterVelocity) {
             currentShooterVelocity = targetVelocity;
-            isHighVelocityMode = leftTriggerHeld;
+            velocityModeName = targetModeName;
             robot.shooting.startShooter(currentShooterVelocity);
         }
 

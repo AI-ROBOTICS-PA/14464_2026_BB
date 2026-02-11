@@ -52,7 +52,8 @@ public class Auto_RedFar extends OpMode {
     // All measurements in INCHES using Pedro Pathing coordinate system
     
     // Starting/Launch position - Red Far Zone
-    private static final Pose START_POSE = new Pose(95, 0, Math.toRadians(90)); // Facing goal (up)
+    // Robot is 18x15 inches. Pose = center. Y offset = 18/2 = 9 (back against bottom wall)
+    private static final Pose START_POSE = new Pose(95, 9, Math.toRadians(90));
     
     // Intake zone - where we pick up balls
     private static final Pose INTAKE_POSE = new Pose(131, 36, Math.toRadians(90));

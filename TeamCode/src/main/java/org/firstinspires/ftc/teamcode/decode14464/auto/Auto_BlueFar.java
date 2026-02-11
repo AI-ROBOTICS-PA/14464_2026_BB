@@ -52,7 +52,8 @@ public class Auto_BlueFar extends OpMode {
     // All measurements in INCHES using Pedro Pathing coordinate system
     
     // Starting/Launch position - Blue Far Zone
-    private static final Pose START_POSE = new Pose(50, 0, Math.toRadians(180));
+    // Robot is 18x15 inches. Pose = center. Y offset = 15/2 = 7.5 (side against bottom wall)
+    private static final Pose START_POSE = new Pose(50, 7.5, Math.toRadians(180));
     
     // Intake zone - where we pick up balls
     private static final Pose INTAKE_POSE = new Pose(36, 36, Math.toRadians(180));
