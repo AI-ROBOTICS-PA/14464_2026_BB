@@ -15,35 +15,44 @@ import org.firstinspires.ftc.teamcode.decode14464.systems.RobotMotors;
 import org.firstinspires.ftc.teamcode.decode14464.systems.RobotSystem;
 
 /**
- * AUTO: Red Alliance - Far Zone (Phase Select)
+ * Auto Red Far - Phase-by-Phase Selection
+ * MIRRORED from Auto_BlueFar_TEST (X = 144 - X, heading 0° instead of 180°)
  * 
  * SEQUENCE (8 steps):
- *   Step 0: Begin on initial pose (95, 9) heading 90°
- *   Step 1: Load turret offset (user pre-aimed)
+ *   Step 0: Begin on initial pose (94, 7.5) heading 0°
+ *   Step 1: Move turret to goal angle (manual aim)
  *   Step 2: Auto-shoot 3 preloaded balls
- *   Step 3: Drive to intake position (131, 36)
+ *   Step 3: Drive to intake position (108, 36)
  *   Step 4: Start auto intake motor
- *   Step 5: Drive forward while intaking to sweep up 3 balls
- *   Step 6: Return to start/launch position (95, 9)
+ *   Step 5: Drive forward to X=134 while intaking to sweep up 3 balls
+ *   Step 6: Return to start/launch position (94, 7.5)
  *   Step 7: Auto-shoot 3 newly intaked balls
- *   Step 8: Drive to park position
+ *   Step 8: Drive to park position (120, 24)
  * 
  * DURING INIT:
  * - D-Pad Up/Down: Select which phase to STOP after
  * - A/Cross: Toggle "Manual Advance" mode (step through states one by one)
  * 
  * PHASES:
- * 1. INIT_TURRET - Load turret offset (no motor movement)
+ * 1. INIT_TURRET - Move turret to initial goal angle
  * 2. FIRST_SHOOT - Flywheel spinup + auto-shoot 3 preloaded balls
- * 3. DRIVE_INTAKE - Drive to intake zone
- * 4. INTAKE - Forward sweep while intaking (stops at 3 balls)
+ * 3. DRIVE_INTAKE - Drive to intake zone (108, 36)
+ * 4. INTAKE - Forward sweep to X=134 while intaking (stops at 3 balls)
  * 5. DRIVE_LAUNCH - Return to launch position
  * 6. SECOND_SHOOT - Auto-shoot 3 intaked balls
  * 7. PARK - Drive to park position
  * 8. COMPLETE - Full auto (no stop)
+ * 
+ * DURING RUN (if Manual Advance ON):
+ * - Press A/Cross to advance to next state
+ * 
+ * Uses Pedro Pathing coordinate system:
+ * - X increases to the right
+ * - Y increases upward
+ * - 0° = facing right, 90° = facing up (counterclockwise positive)
  */
 @Autonomous(name = "Auto-Red Far (Phase Select)", group = "DECODE Auto")
-public class Auto_RedFar extends OpMode {
+public class Auto_RedFar_TEST extends OpMode {
 
     // ========== ROBOT SYSTEM ==========
     private RobotSystem robot;
@@ -75,15 +84,17 @@ public class Auto_RedFar extends OpMode {
     private boolean prevA = false;
     
     // ========== FIELD POSITIONS ==========
-    // Robot is 18x15 inches. Pose = center. Y offset = 18/2 = 9 (back against bottom wall)
-    private static final Pose START_POSE = new Pose(95, 9, Math.toRadians(90));
-    private static final Pose INTAKE_POSE = new Pose(131, 36, Math.toRadians(90));
-    // Forward sweep: heading 90° = +Y direction. Drive forward ~26" while intaking.
-    private static final Pose INTAKE_FORWARD_POSE = new Pose(131, 62, Math.toRadians(90)); // TUNE THIS
-    // Park position after second shoot (TUNE THIS for your field)
-    private static final Pose PARK_POSE = new Pose(120, 24, Math.toRadians(90)); // TUNE THIS
+    // MIRRORED from Blue Far: X = 144 - BlueX, heading 0° instead of 180°
+    // Robot is 18x15 inches. Pose = center. Y offset = 15/2 = 7.5 (side against bottom wall)
+    private static final Pose START_POSE = new Pose(94, 7.5, Math.toRadians(0));
+    private static final Pose INTAKE_POSE = new Pose(108, 36, Math.toRadians(0));
+    // Step 5: Robot drives forward (heading 0° = +X direction) while intaking to sweep up balls
+    private static final Pose INTAKE_FORWARD_POSE = new Pose(134, 36, Math.toRadians(0));
+    // Step 8: Park position after second shoot
+    private static final Pose PARK_POSE = new Pose(120, 24, Math.toRadians(0));
     
     // ========== SHOOTING PARAMETERS ==========
+    // Far zone = long distance = HIGH velocity + LONG RANGE hood
     private static final double SHOOTER_VELOCITY = RobotConstants.Shooter.HIGH_VELOCITY;
     private static final double HOOD_POSITION = RobotConstants.Hood.LONG_RANGE_POSITION;
     private static final LimelightManager.Alliance ALLIANCE = LimelightManager.Alliance.RED;
@@ -134,10 +145,10 @@ public class Auto_RedFar extends OpMode {
     private AutoState pausedFromState = null;
     
     // ========== PATHS ==========
-    private Path pathToIntake;
-    private PathChain pathIntakeForward;
-    private Path pathToLaunch;
-    private Path pathToPark;
+    private Path pathToIntake;              // START_POSE → INTAKE_POSE
+    private PathChain pathIntakeForward;    // INTAKE_POSE → INTAKE_FORWARD_POSE (slow sweep)
+    // pathToLaunch: built dynamically at runtime (intake sweep may end early)
+    private Path pathToPark;                // START_POSE → PARK_POSE
     
     // ========== LIFECYCLE METHODS ==========
     
@@ -164,7 +175,7 @@ public class Auto_RedFar extends OpMode {
         
         buildPaths();
         
-        telemetry.addLine("=== Red Far - Phase Select ===");
+        telemetry.addLine("=== TEST MODE: Red Far ===");
         telemetry.addLine("Use D-Pad Up/Down to select stop phase");
         telemetry.addLine("Press A to toggle Manual Advance");
         telemetry.update();
@@ -172,6 +183,7 @@ public class Auto_RedFar extends OpMode {
     
     @Override
     public void init_loop() {
+        // Phase selection with D-Pad
         if (gamepad1.dpad_up && !prevDpadUp) {
             int idx = stopAfterPhase.ordinal();
             if (idx < TestPhase.values().length - 1) {
@@ -188,18 +200,21 @@ public class Auto_RedFar extends OpMode {
         }
         prevDpadDown = gamepad1.dpad_down;
         
+        // Toggle manual advance mode
         boolean aPressed = gamepad1.a || gamepad1.cross;
         if (aPressed && !prevA) {
             manualAdvanceMode = !manualAdvanceMode;
         }
         prevA = aPressed;
         
+        // Update limelight
         if (robot.limelight != null) {
             robot.limelight.update();
         }
         
+        // Display configuration
         telemetry.addLine("══════════════════════════════════════");
-        telemetry.addLine("   Red Far - Phase Select");
+        telemetry.addLine("   TEST MODE: Red Far - Phase Select");
         telemetry.addLine("══════════════════════════════════════");
         telemetry.addLine();
         
@@ -216,16 +231,19 @@ public class Auto_RedFar extends OpMode {
         telemetry.addLine("─── ROBOT STATUS ───");
         if (robot.limelight != null && robot.limelight.isConnected()) {
             telemetry.addData("Limelight", robot.limelight.hasAllianceTarget() ? 
-                "Tag visible (tx: " + String.format("%.1f", robot.limelight.getTargetX()) + ")" : 
+                "✓ Tag visible (tx: " + String.format("%.1f", robot.limelight.getTargetX()) + "°)" : 
                 "Connected (no tag)");
         } else {
             telemetry.addData("Limelight", "Not connected");
         }
-        telemetry.addData("Initial Turret Offset", "%.1f (AIM HERE before START)", INITIAL_TURRET_ANGLE);
-        if (robot.motors != null && robot.motors.turret != null) {
-            telemetry.addData("Turret Encoder", "%d ticks", robot.motors.turret.getCurrentPosition());
+        telemetry.addData("Initial Turret Offset", "%.1f° (AIM HERE before START)", INITIAL_TURRET_ANGLE);
+        if (robot.autoTurret != null) {
+            telemetry.addData("Turret Encoder", "%d ticks", 
+                robot.motors != null && robot.motors.turret != null ? 
+                robot.motors.turret.getCurrentPosition() : 0);
         }
-        telemetry.addData("Shooter Velocity", "%.0f", SHOOTER_VELOCITY);
+        telemetry.addData("Shooter Velocity", "HIGH @ %.0f", SHOOTER_VELOCITY);
+        telemetry.addData("Hood", "LONG RANGE @ %.2f", HOOD_POSITION);
         
         telemetry.addLine();
         telemetry.addLine("*** MANUAL AIM: Point turret at goal ***");
@@ -243,18 +261,22 @@ public class Auto_RedFar extends OpMode {
             robot.led.setLaunchModeColor();
         }
         
+        // Start flywheel
         if (robot.shooting != null) {
             robot.shooting.startShooter(SHOOTER_VELOCITY);
         }
         
+        // Reset gamepad tracking for run loop
         prevA = gamepad1.a || gamepad1.cross;
     }
     
     @Override
     public void loop() {
+        // Update all robot systems
         robot.updateAll();
         if (follower != null) follower.update();
         
+        // Handle manual advance
         if (currentState == AutoState.PAUSED) {
             boolean aPressed = gamepad1.a || gamepad1.cross;
             if (aPressed && !prevA) {
@@ -274,6 +296,7 @@ public class Auto_RedFar extends OpMode {
     @Override
     public void stop() {
         if (robot != null) {
+            // Save turret offset for TeleOp (Auto → TeleOp persistence)
             if (robot.autoTurret != null) {
                 RobotMotors.saveTurretOffset(
                     robot.autoTurret.getManualOffsetTicks(),
@@ -290,17 +313,19 @@ public class Auto_RedFar extends OpMode {
     // ========== PATH BUILDING ==========
     
     private void buildPaths() {
+        // Step 3: Drive from start to intake zone
         pathToIntake = new Path(new BezierLine(START_POSE, INTAKE_POSE));
         pathToIntake.setLinearHeadingInterpolation(START_POSE.getHeading(), INTAKE_POSE.getHeading());
         
+        // Step 5: Forward sweep to pick up balls (INTAKE_POSE → X=134)
         pathIntakeForward = follower.pathBuilder()
                 .addPath(new BezierLine(INTAKE_POSE, INTAKE_FORWARD_POSE))
                 .setConstantHeadingInterpolation(INTAKE_POSE.getHeading())
                 .build();
         
-        pathToLaunch = new Path(new BezierLine(INTAKE_FORWARD_POSE, START_POSE));
-        pathToLaunch.setLinearHeadingInterpolation(INTAKE_FORWARD_POSE.getHeading(), START_POSE.getHeading());
+        // Step 6: Return to launch — built dynamically at runtime (intake sweep may end early)
         
+        // Step 8: Drive to park position
         pathToPark = new Path(new BezierLine(START_POSE, PARK_POSE));
         pathToPark.setLinearHeadingInterpolation(START_POSE.getHeading(), PARK_POSE.getHeading());
     }
@@ -312,10 +337,12 @@ public class Auto_RedFar extends OpMode {
         
         switch (currentState) {
             
+            // ==================== PHASE 1: INIT TURRET (Offset-based) ====================
+            
             case INIT:
-                // Store offset, hold turret at manual aim using PID (prevents drift)
                 robot.autoTurret.setInitialOffset(INITIAL_TURRET_ANGLE);
                 robot.autoTurret.holdCurrentPosition();
+                
                 if (stopAfterPhase == TestPhase.INIT_TURRET) {
                     currentState = AutoState.PHASE_COMPLETE;
                 } else {
@@ -323,10 +350,13 @@ public class Auto_RedFar extends OpMode {
                 }
                 break;
             
+            // ==================== LIMELIGHT CALIBRATION (reserved) ====================
+                
             case LIMELIGHT_CALIBRATE:
-                // Unused — fully manual aim for first shot
                 transitionTo(AutoState.WAIT_SHOOTER_READY_1);
                 break;
+                
+            // ==================== PHASE 2: FIRST SHOOTING ====================
                 
             case WAIT_SHOOTER_READY_1:
                 if (robot.shooting.isShooterAtTargetVelocity() || 
@@ -364,8 +394,9 @@ public class Auto_RedFar extends OpMode {
                 }
                 break;
                 
+            // ==================== PHASE 3: DRIVE TO INTAKE ZONE ====================
+                
             case DRIVE_TO_INTAKE:
-                // Turret stays at manual aim — no auto-tracking during auto.
                 if (robot.autoIntake != null) {
                     robot.autoIntake.setIntakeMode();
                     robot.autoIntake.resetBallCount();
@@ -388,6 +419,8 @@ public class Auto_RedFar extends OpMode {
                     }
                 }
                 break;
+                
+            // ==================== PHASE 4: INTAKE FORWARD SWEEP ====================
                 
             case INTAKE_FORWARD:
                 follower.setMaxPower(RobotConstants.Auto.INTAKE_FORWARD_SPEED);
@@ -420,8 +453,14 @@ public class Auto_RedFar extends OpMode {
                 }
                 break;
                 
+            // ==================== PHASE 5: DRIVE BACK TO LAUNCH ====================
+                
             case DRIVE_TO_LAUNCH:
-                follower.followPath(pathToLaunch);
+                // Build path dynamically from actual position (intake sweep may end early)
+                Pose currentPose = follower.getPose();
+                Path dynamicToLaunch = new Path(new BezierLine(currentPose, START_POSE));
+                dynamicToLaunch.setLinearHeadingInterpolation(currentPose.getHeading(), START_POSE.getHeading());
+                follower.followPath(dynamicToLaunch);
                 transitionTo(AutoState.WAIT_ARRIVE_LAUNCH);
                 break;
                 
@@ -434,6 +473,8 @@ public class Auto_RedFar extends OpMode {
                     }
                 }
                 break;
+                
+            // ==================== PHASE 6: SECOND SHOOTING ====================
                 
             case WAIT_TURRET_AIM_2:
                 if (robot.autoTurret.isOnTarget() || 
@@ -466,6 +507,8 @@ public class Auto_RedFar extends OpMode {
                 }
                 break;
                 
+            // ==================== PHASE 7: PARK ====================
+                
             case DRIVE_TO_PARK:
                 follower.followPath(pathToPark);
                 transitionTo(AutoState.WAIT_ARRIVE_PARK);
@@ -476,6 +519,8 @@ public class Auto_RedFar extends OpMode {
                     currentState = AutoState.COMPLETE;
                 }
                 break;
+                
+            // ==================== COMPLETE ====================
                 
             case COMPLETE:
                 robot.stopAll();
@@ -489,6 +534,9 @@ public class Auto_RedFar extends OpMode {
         }
     }
     
+    /**
+     * Transition to next state, with manual advance pause if enabled
+     */
     private void transitionTo(AutoState nextState) {
         if (manualAdvanceMode) {
             pausedFromState = currentState;
@@ -500,6 +548,9 @@ public class Auto_RedFar extends OpMode {
         }
     }
     
+    /**
+     * Get the next state after a paused state
+     */
     private AutoState getNextState(AutoState fromState) {
         AutoState[] states = AutoState.values();
         int idx = fromState.ordinal();
@@ -513,7 +564,7 @@ public class Auto_RedFar extends OpMode {
     
     private void updateTelemetry() {
         telemetry.addLine("══════════════════════════════════════");
-        telemetry.addLine("   Red Far - RUNNING");
+        telemetry.addLine("   RED FAR - RUNNING");
         telemetry.addLine("══════════════════════════════════════");
         
         telemetry.addLine();
@@ -524,6 +575,7 @@ public class Auto_RedFar extends OpMode {
         } else if (currentState == AutoState.PHASE_COMPLETE) {
             telemetry.addLine(">>> PHASE COMPLETE <<<");
             telemetry.addData("Stopped after", stopAfterPhase.displayName);
+            telemetry.addLine("Systems still running for observation");
         } else {
             telemetry.addData("STATE", ">> " + currentState.toString() + " <<");
         }
@@ -531,36 +583,57 @@ public class Auto_RedFar extends OpMode {
         telemetry.addData("Timer", "%.2f s", actionTimer.getElapsedTimeSeconds());
         
         telemetry.addLine();
+        telemetry.addLine("─── PHASE PROGRESS ───");
         telemetry.addData("Stop After", stopAfterPhase.displayName);
-        telemetry.addData("Manual Mode", manualAdvanceMode ? "ON" : "OFF");
+        telemetry.addData("Manual Mode", manualAdvanceMode ? "ON (step-by-step)" : "OFF");
         
         telemetry.addLine();
-        telemetry.addData("Position", "(%.1f, %.1f) @ %.1f",
-            robot.localization.getX(), robot.localization.getY(), robot.localization.getHeadingDegrees());
+        telemetry.addLine("─── ROBOT STATUS ───");
+        telemetry.addData("Position", "(%.1f, %.1f) @ %.1f°",
+            robot.localization.getX(), 
+            robot.localization.getY(),
+            robot.localization.getHeadingDegrees());
         
         if (robot.autoTurret != null) {
-            telemetry.addData("Turret", "%.1f (phys %.1f) %s",
+            telemetry.addData("Turret", "%.1f° %s %s",
                 robot.autoTurret.getCurrentAngleDegrees(),
-                robot.autoTurret.getPhysicalAngleDegrees(),
-                robot.autoTurret.isOnTarget() ? "ON TARGET" : "tracking");
+                robot.autoTurret.isOnTarget() ? "✓ ON TARGET" : "tracking",
+                robot.autoTurret.isAnyModeEnabled() ? "(AUTO)" : "(OFF)");
+        }
+        
+        if (robot.limelight != null && robot.limelight.isConnected()) {
+            if (robot.limelight.hasAllianceTarget()) {
+                double tx = robot.limelight.getTargetX();
+                telemetry.addData("Limelight Aim", "tx=%.1f° %s", tx,
+                    Math.abs(tx) < RobotConstants.Auto.LIMELIGHT_ON_TARGET_DEGREES ? 
+                    "✓ LOCKED" : "correcting");
+            } else {
+                telemetry.addData("Limelight Aim", "No tag visible");
+            }
         }
         
         telemetry.addData("Shooter", "%.0f / %.0f %s",
-            robot.shooting.getCurrentVelocity(), SHOOTER_VELOCITY,
-            robot.shooting.isShooterAtTargetVelocity() ? "READY" : "spinning");
+            robot.shooting.getCurrentVelocity(),
+            SHOOTER_VELOCITY,
+            robot.shooting.isShooterAtTargetVelocity() ? "✓ READY" : "spinning up");
         
         if (robot.autoShoot.isInProgress()) {
-            telemetry.addData("Auto-Shoot", "%d/%d balls",
-                robot.autoShoot.getBallsShot(), robot.autoShoot.getBallsToShoot());
+            telemetry.addData("Auto-Shoot", "ACTIVE: %d/%d balls",
+                robot.autoShoot.getBallsShot(),
+                robot.autoShoot.getBallsToShoot());
         }
         
         if (robot.autoIntake != null) {
             telemetry.addData("Mode", robot.autoIntake.isIntakeMode() ? "INTAKE" : "LAUNCH");
-            telemetry.addData("Balls", "%d / %d", 
+            telemetry.addData("Balls Loaded", "%d / %d", 
                 robot.autoIntake.getBallsLoaded(), RobotConstants.Auto.BALLS_PER_CYCLE);
+            if (robot.autoIntake.getBallsLoaded() > 0) {
+                telemetry.addData("Ball Colors", robot.autoIntake.getBallColorSummary());
+            }
         }
         
         telemetry.addData("Path", follower.isBusy() ? "MOVING" : "IDLE");
+        
         telemetry.update();
     }
 }

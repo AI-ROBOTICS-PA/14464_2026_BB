@@ -34,11 +34,17 @@ public class AutoShootSystem {
     private int sensorDetectedCount = 0;
     private int timeoutUsedCount = 0;
 
-    // Timing constants
-    private static final long PUSH_DURATION_MS = 300;
-    private static final long RETRACT_TIMEOUT_MS = 500;
-    private static final long ADVANCE_DURATION_MS = 300;       // Time for small moves between adjacent slots
-    private static final long INITIAL_POSITION_DURATION_MS = 700;  // Time for initial servo travel to highest slot (large move)
+    // Default timing constants (safe for Far autos)
+    private static final long DEFAULT_PUSH_DURATION_MS = 300;
+    private static final long DEFAULT_RETRACT_TIMEOUT_MS = 500;
+    private static final long DEFAULT_ADVANCE_DURATION_MS = 300;
+    private static final long DEFAULT_INITIAL_POSITION_DURATION_MS = 700;
+    
+    // Active timing (configurable per auto via setFastTiming)
+    private long pushDurationMs = DEFAULT_PUSH_DURATION_MS;
+    private long retractTimeoutMs = DEFAULT_RETRACT_TIMEOUT_MS;
+    private long advanceDurationMs = DEFAULT_ADVANCE_DURATION_MS;
+    private long initialPositionDurationMs = DEFAULT_INITIAL_POSITION_DURATION_MS;
 
     /**
      * Initialize auto-shoot system
@@ -51,6 +57,27 @@ public class AutoShootSystem {
         this.autoIntake = autoIntake;
     }
 
+    /**
+     * Use tighter timing for Near autos (3 shoot cycles need to fit in 30s)
+     * Call this once during init() before any shooting starts.
+     */
+    public void setFastTiming() {
+        pushDurationMs = 300;
+        retractTimeoutMs = 300;
+        advanceDurationMs = 300;
+        initialPositionDurationMs = 350;
+    }
+    
+    /**
+     * Reset to default (safe) timing for Far autos
+     */
+    public void setDefaultTiming() {
+        pushDurationMs = DEFAULT_PUSH_DURATION_MS;
+        retractTimeoutMs = DEFAULT_RETRACT_TIMEOUT_MS;
+        advanceDurationMs = DEFAULT_ADVANCE_DURATION_MS;
+        initialPositionDurationMs = DEFAULT_INITIAL_POSITION_DURATION_MS;
+    }
+    
     /**
      * Start auto-shoot sequence
      * @param numberOfBalls Number of balls to shoot (1-3)
@@ -141,7 +168,7 @@ public class AutoShootSystem {
                 }
                 // Wait for servo to physically reach the highest slot (large travel distance)
                 // Uses longer timeout than ADVANCE since this can be a full-range move (e.g., 0.0 → 0.905)
-                if (elapsed > INITIAL_POSITION_DURATION_MS) {
+                if (elapsed > initialPositionDurationMs) {
                     turretMoved = false; // Reset for ADVANCE state use
                     state = AutoShootState.PUSH;
                     stateStartTime = System.currentTimeMillis();
@@ -159,7 +186,7 @@ public class AutoShootSystem {
 
             case WAIT_PUSH:
                 // Wait for servo to push ball
-                if (elapsed > PUSH_DURATION_MS) {
+                if (elapsed > pushDurationMs) {
                     ballsShot++;
                     state = AutoShootState.RETRACT;
                     stateStartTime = System.currentTimeMillis();
@@ -178,7 +205,7 @@ public class AutoShootSystem {
             case WAIT_RETRACT:
                 // Wait for ball push servo to retract - USE TOUCH SENSOR with timeout safety
                 boolean sensorRetracted = (sensors != null && sensors.isBallPushRetracted());
-                boolean timeoutReached = elapsed > RETRACT_TIMEOUT_MS;
+                boolean timeoutReached = elapsed > retractTimeoutMs;
 
                 if (sensorRetracted) {
                     sensorDetectedCount++;
@@ -197,7 +224,7 @@ public class AutoShootSystem {
                 }
 
                 // Wait for turret servo to move
-                if (elapsed > ADVANCE_DURATION_MS) {
+                if (elapsed > advanceDurationMs) {
                     state = AutoShootState.PUSH;
                     stateStartTime = System.currentTimeMillis();
                 }
