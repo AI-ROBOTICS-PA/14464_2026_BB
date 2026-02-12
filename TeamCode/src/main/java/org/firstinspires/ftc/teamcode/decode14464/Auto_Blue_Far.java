@@ -16,7 +16,8 @@ import org.firstinspires.ftc.teamcode.decode14464.systems.RobotServos;
 import org.firstinspires.ftc.teamcode.decode14464.systems.RobotSensors;
 
 
-@Autonomous(name = "Auto Blue Far", group = "DECODE Auto")
+//// DISABLED: Old version — use auto/Auto_BlueFar_TEST.java instead
+// @Autonomous(name = "Auto Blue Far", group = "DECODE Auto")
 public class Auto_Blue_Far extends OpMode {
 
 

@@ -4,43 +4,37 @@ import com.pedropathing.follower.Follower;
 import com.pedropathing.geometry.BezierLine;
 import com.pedropathing.geometry.Pose;
 import com.pedropathing.paths.Path;
+import com.pedropathing.paths.PathChain;
 import com.pedropathing.util.Timer;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 
 import org.firstinspires.ftc.teamcode.decode14464.systems.LimelightManager;
 import org.firstinspires.ftc.teamcode.decode14464.systems.RobotConstants;
+import org.firstinspires.ftc.teamcode.decode14464.systems.RobotMotors;
 import org.firstinspires.ftc.teamcode.decode14464.systems.RobotSystem;
 
 /**
- * AUTO: Blue Alliance - Near Zone
+ * AUTO: Blue Alliance - Near Zone (Phase Select)
  * 
- * Starting Position: (12, 132) @ 45° facing goal
- * Alliance: BLUE (AprilTag 20)
+ * SEQUENCE (8 steps):
+ *   Step 0: Begin on initial pose (12, 132) heading 45°
+ *   Step 1: Load turret offset (user pre-aimed)
+ *   Step 2: Auto-shoot 3 preloaded balls
+ *   Step 3: Drive to intake position (36, 84)
+ *   Step 4: Start auto intake motor
+ *   Step 5: Drive forward while intaking to sweep up 3 balls
+ *   Step 6: Return to start/launch position (12, 132)
+ *   Step 7: Auto-shoot 3 newly intaked balls
+ *   Step 8: Drive to park position
  * 
- * FEATURES:
- * - Auto-Turret: Combined Goal Tracking keeps turret motor pointed at goal
- * - Auto-Shoot: Automated 3-ball shooting sequence
- * - Auto-Intake: Ball detection with automatic carousel advance
- * - Continuous Flywheel: Motor runs at constant velocity throughout auto
+ * DURING INIT:
+ * - D-Pad Up/Down: Select which phase to STOP after
+ * - A/Cross: Toggle "Manual Advance" mode
  * 
- * SEQUENCE:
- * 1. Start with 3 balls loaded, flywheel starts immediately
- * 2. Enable auto-turret (Combined Goal Tracking)
- * 3. Wait for flywheel velocity + turret aim
- * 4. Shoot all 3 balls
- * 5. Drive to intake zone - flywheel stays running
- * 6. Intake 3 new balls (auto-advance on detection)
- * 7. Return to launch zone - flywheel already at speed
- * 8. Wait for turret to re-aim at goal
- * 9. Shoot all 3 balls immediately
- * 
- * Uses Pedro Pathing coordinate system:
- * - X increases to the right
- * - Y increases upward  
- * - 0° = facing right, 90° = facing up (counterclockwise positive)
+ * Near zone = short distance = LOW velocity + SHORT RANGE hood
  */
-@Autonomous(name = "Auto-Blue Near", group = "DECODE Auto")
+@Autonomous(name = "Auto-Blue Near (Phase Select)", group = "DECODE Auto")
 public class Auto_BlueNear extends OpMode {
 
     // ========== ROBOT SYSTEM ==========
@@ -48,168 +42,242 @@ public class Auto_BlueNear extends OpMode {
     private Follower follower;
     private Timer actionTimer;
     
-    // ========== FIELD POSITIONS ==========
-    // All measurements in INCHES using Pedro Pathing coordinate system
+    // ========== TEST CONFIGURATION ==========
+    private enum TestPhase {
+        INIT_TURRET("1. Init Turret Only"),
+        FIRST_SHOOT("2. First Shooting"),
+        DRIVE_INTAKE("3. Drive to Intake"),
+        INTAKE("4. Intake Balls (forward sweep)"),
+        DRIVE_LAUNCH("5. Drive to Launch"),
+        SECOND_SHOOT("6. Second Shooting"),
+        PARK("7. Park"),
+        COMPLETE("8. Full Auto (no stop)");
+        
+        final String displayName;
+        TestPhase(String name) { this.displayName = name; }
+    }
     
-    // Starting/Launch position - Blue Near Zone
+    private TestPhase stopAfterPhase = TestPhase.COMPLETE;
+    private boolean manualAdvanceMode = false;
+    private boolean waitingForAdvance = false;
+    
+    private boolean prevDpadUp = false;
+    private boolean prevDpadDown = false;
+    private boolean prevA = false;
+    
+    // ========== FIELD POSITIONS ==========
     // Robot is 18x15. At 45° heading, center needs ~11.7" clearance from walls.
     // X=12 (12" from left wall), Y=132 (12" from top wall) — tight but fits.
-    private static final Pose START_POSE = new Pose(12, 132, Math.toRadians(45)); // Facing goal
-    
-    // Intake zone - where we pick up balls
+    private static final Pose START_POSE = new Pose(12, 132, Math.toRadians(45));
     private static final Pose INTAKE_POSE = new Pose(36, 84, Math.toRadians(45));
+    // Forward sweep at heading 45° (northeast). Drive forward ~20" while intaking.
+    private static final Pose INTAKE_FORWARD_POSE = new Pose(50, 98, Math.toRadians(45)); // TUNE THIS
+    // Park position (TUNE THIS for your field)
+    private static final Pose PARK_POSE = new Pose(24, 120, Math.toRadians(45)); // TUNE THIS
     
-    // ========== SHOOTING PARAMETERS (from RobotConstants) ==========
-    // Near zone = short distance shots = LOW velocity + SHORT RANGE hood
+    // ========== SHOOTING PARAMETERS ==========
     private static final double SHOOTER_VELOCITY = RobotConstants.Shooter.LOW_VELOCITY;
     private static final double HOOD_POSITION = RobotConstants.Hood.SHORT_RANGE_POSITION;
-    
-    // ========== ALLIANCE ==========
     private static final LimelightManager.Alliance ALLIANCE = LimelightManager.Alliance.BLUE;
-    
-    // ========== INITIAL TURRET ANGLE (TUNABLE) ==========
     private static final double INITIAL_TURRET_ANGLE = RobotConstants.Auto.BLUE_NEAR_INITIAL_TURRET_ANGLE;
     
     // ========== STATE MACHINE ==========
     private enum AutoState {
-        // Initial setup
         INIT,
-        MOVE_TURRET_INITIAL,
-        WAIT_TURRET_INITIAL,
-        
-        // Initial shooting sequence
+        LIMELIGHT_CALIBRATE,
         WAIT_SHOOTER_READY_1,
         WAIT_TURRET_AIM_1,
         SHOOT_SEQUENCE_1,
         WAIT_SHOOT_COMPLETE_1,
-        
-        // Drive to intake
         DRIVE_TO_INTAKE,
         WAIT_ARRIVE_INTAKE,
-        
-        // Intake sequence
-        INTAKING,
-        
-        // Return to launch
+        INTAKE_FORWARD,
+        WAIT_INTAKE_COMPLETE,
         DRIVE_TO_LAUNCH,
         WAIT_ARRIVE_LAUNCH,
-        
-        // Second shooting sequence
         WAIT_TURRET_AIM_2,
         SHOOT_SEQUENCE_2,
         WAIT_SHOOT_COMPLETE_2,
-        
-        // Done
-        COMPLETE
+        DRIVE_TO_PARK,
+        WAIT_ARRIVE_PARK,
+        COMPLETE,
+        PHASE_COMPLETE,
+        PAUSED
     }
     
     private AutoState currentState = AutoState.INIT;
+    private AutoState pausedFromState = null;
     
     // ========== PATHS ==========
     private Path pathToIntake;
+    private PathChain pathIntakeForward;
     private Path pathToLaunch;
+    private Path pathToPark;
     
     // ========== LIFECYCLE METHODS ==========
     
     @Override
     public void init() {
-        // Initialize robot system with starting pose
         robot = new RobotSystem();
         robot.init(hardwareMap, START_POSE);
-        
-        // Get follower reference from robot's localization system
         follower = robot.localization.getFollower();
         
-        // Set alliance
         if (robot.limelight != null) {
             robot.limelight.setAlliance(ALLIANCE);
         }
         
-        // Initialize timer
         actionTimer = new Timer();
         
-        // Set initial hood position for near zone
         if (robot.servos != null && robot.servos.hood_5 != null) {
             robot.servos.hood_5.setPosition(HOOD_POSITION);
         }
         
-        // Ensure we're in launch mode with 3 balls loaded (index 2)
         if (robot.autoIntake != null) {
-            robot.autoIntake.setBallsLoaded(RobotConstants.Auto.BALLS_PER_CYCLE); // Tell system balls are pre-loaded
-            robot.autoIntake.setLaunchMode(); // Now positions correctly based on ballsLoaded
+            robot.autoIntake.setBallsLoaded(RobotConstants.Auto.BALLS_PER_CYCLE);
+            robot.autoIntake.setLaunchMode();
         }
         
-        // Build paths
         buildPaths();
         
-        // Telemetry
-        displayInitTelemetry();
+        telemetry.addLine("=== Blue Near - Phase Select ===");
+        telemetry.addLine("Use D-Pad Up/Down to select stop phase");
+        telemetry.addLine("Press A to toggle Manual Advance");
+        telemetry.update();
     }
     
     @Override
     public void init_loop() {
-        // Update limelight during init for AprilTag detection
-        if (robot.limelight != null) {
-            robot.limelight.update();
-            telemetry.addData("Limelight", robot.limelight.isConnected() ? "✓ Connected" : "✗ Not Connected");
-            if (robot.limelight.hasAllianceTarget()) {
-                telemetry.addData("AprilTag", "✓ VISIBLE - tx: %.1f°", robot.limelight.getTargetX());
-            } else {
-                telemetry.addData("AprilTag", "✗ Tag %d not visible", robot.limelight.getTargetTagId());
+        if (gamepad1.dpad_up && !prevDpadUp) {
+            int idx = stopAfterPhase.ordinal();
+            if (idx < TestPhase.values().length - 1) {
+                stopAfterPhase = TestPhase.values()[idx + 1];
             }
         }
+        prevDpadUp = gamepad1.dpad_up;
+        
+        if (gamepad1.dpad_down && !prevDpadDown) {
+            int idx = stopAfterPhase.ordinal();
+            if (idx > 0) {
+                stopAfterPhase = TestPhase.values()[idx - 1];
+            }
+        }
+        prevDpadDown = gamepad1.dpad_down;
+        
+        boolean aPressed = gamepad1.a || gamepad1.cross;
+        if (aPressed && !prevA) {
+            manualAdvanceMode = !manualAdvanceMode;
+        }
+        prevA = aPressed;
+        
+        if (robot.limelight != null) {
+            robot.limelight.update();
+        }
+        
+        telemetry.addLine("══════════════════════════════════════");
+        telemetry.addLine("   Blue Near - Phase Select");
+        telemetry.addLine("══════════════════════════════════════");
+        telemetry.addLine();
+        
+        telemetry.addLine("─── STOP AFTER PHASE (D-Pad Up/Down) ───");
+        for (TestPhase phase : TestPhase.values()) {
+            String marker = (phase == stopAfterPhase) ? ">> " : "   ";
+            telemetry.addLine(marker + phase.displayName);
+        }
+        
+        telemetry.addLine();
+        telemetry.addData("Manual Advance (A)", manualAdvanceMode ? "ON - Step through states" : "OFF - Auto run");
+        
+        telemetry.addLine();
+        telemetry.addLine("─── ROBOT STATUS ───");
+        if (robot.limelight != null && robot.limelight.isConnected()) {
+            telemetry.addData("Limelight", robot.limelight.hasAllianceTarget() ? 
+                "Tag visible (tx: " + String.format("%.1f", robot.limelight.getTargetX()) + ")" : 
+                "Connected (no tag)");
+        } else {
+            telemetry.addData("Limelight", "Not connected");
+        }
+        telemetry.addData("Initial Turret Offset", "%.1f (AIM HERE before START)", INITIAL_TURRET_ANGLE);
+        if (robot.motors != null && robot.motors.turret != null) {
+            telemetry.addData("Turret Encoder", "%d ticks", robot.motors.turret.getCurrentPosition());
+        }
+        telemetry.addData("Shooter Velocity", "%.0f (LOW)", SHOOTER_VELOCITY);
+        
+        telemetry.addLine();
+        telemetry.addLine("*** MANUAL AIM: Point turret at goal ***");
+        telemetry.addLine(">>> Then press START to begin <<<");
         telemetry.update();
     }
     
     @Override
     public void start() {
-        // Reset timer and start state machine
         actionTimer.resetTimer();
         currentState = AutoState.INIT;
+        waitingForAdvance = false;
         
-        // Set LED to launch mode
         if (robot.led != null) {
             robot.led.setLaunchModeColor();
         }
         
-        // NOTE: Auto-turret enabled AFTER initial turret positioning in state machine
+        if (robot.shooting != null) {
+            robot.shooting.startShooter(SHOOTER_VELOCITY);
+        }
         
-        // Start flywheel immediately - runs continuously throughout auto
-        robot.shooting.startShooter(SHOOTER_VELOCITY);
+        prevA = gamepad1.a || gamepad1.cross;
     }
     
     @Override
     public void loop() {
-        // Update all robot systems
         robot.updateAll();
-        follower.update();
+        if (follower != null) follower.update();
         
-        // Run state machine
-        runStateMachine();
+        if (currentState == AutoState.PAUSED) {
+            boolean aPressed = gamepad1.a || gamepad1.cross;
+            if (aPressed && !prevA) {
+                currentState = getNextState(pausedFromState);
+                waitingForAdvance = false;
+                actionTimer.resetTimer();
+            }
+            prevA = aPressed;
+        } else {
+            prevA = gamepad1.a || gamepad1.cross;
+            runStateMachine();
+        }
         
-        // Telemetry
         updateTelemetry();
     }
     
     @Override
     public void stop() {
         if (robot != null) {
+            if (robot.autoTurret != null) {
+                RobotMotors.saveTurretOffset(
+                    robot.autoTurret.getManualOffsetTicks(),
+                    robot.autoTurret.getInitialOffsetDegrees()
+                );
+            }
+            if (robot.motors != null) {
+                robot.motors.saveTurretPosition();
+            }
             robot.stopAll();
         }
-        telemetry.addData("Status", "✓ Auto Complete");
-        telemetry.update();
     }
     
     // ========== PATH BUILDING ==========
     
     private void buildPaths() {
-        // Path from start/launch zone to intake zone
         pathToIntake = new Path(new BezierLine(START_POSE, INTAKE_POSE));
         pathToIntake.setLinearHeadingInterpolation(START_POSE.getHeading(), INTAKE_POSE.getHeading());
         
-        // Path from intake zone back to start/launch zone
-        pathToLaunch = new Path(new BezierLine(INTAKE_POSE, START_POSE));
-        pathToLaunch.setLinearHeadingInterpolation(INTAKE_POSE.getHeading(), START_POSE.getHeading());
+        pathIntakeForward = follower.pathBuilder()
+                .addPath(new BezierLine(INTAKE_POSE, INTAKE_FORWARD_POSE))
+                .setConstantHeadingInterpolation(INTAKE_POSE.getHeading())
+                .build();
+        
+        pathToLaunch = new Path(new BezierLine(INTAKE_FORWARD_POSE, START_POSE));
+        pathToLaunch.setLinearHeadingInterpolation(INTAKE_FORWARD_POSE.getHeading(), START_POSE.getHeading());
+        
+        pathToPark = new Path(new BezierLine(START_POSE, PARK_POSE));
+        pathToPark.setLinearHeadingInterpolation(START_POSE.getHeading(), PARK_POSE.getHeading());
     }
     
     // ========== STATE MACHINE ==========
@@ -219,98 +287,99 @@ public class Auto_BlueNear extends OpMode {
         
         switch (currentState) {
             
-            // ==================== INITIAL SHOOTING ====================
-            
             case INIT:
-                robot.autoTurret.moveToAngle(INITIAL_TURRET_ANGLE);
-                currentState = AutoState.MOVE_TURRET_INITIAL;
-                actionTimer.resetTimer();
-                break;
-                
-            case MOVE_TURRET_INITIAL:
-                if (robot.autoTurret.isAtTargetPosition() || 
-                    elapsed > RobotConstants.Auto.INITIAL_TURRET_MOVE_TIMEOUT) {
-                    robot.autoTurret.resumeFromReset();
-                    robot.autoTurret.enableCombinedGoalTracking();
-                    currentState = AutoState.WAIT_TURRET_INITIAL;
-                    actionTimer.resetTimer();
+                // Store offset, hold turret at manual aim using PID (prevents drift)
+                robot.autoTurret.setInitialOffset(INITIAL_TURRET_ANGLE);
+                robot.autoTurret.holdCurrentPosition();
+                if (stopAfterPhase == TestPhase.INIT_TURRET) {
+                    currentState = AutoState.PHASE_COMPLETE;
+                } else {
+                    transitionTo(AutoState.WAIT_SHOOTER_READY_1);
                 }
                 break;
-                
-            case WAIT_TURRET_INITIAL:
-                if (elapsed > RobotConstants.Auto.TURRET_SETTLING_TIME) {
-                    currentState = AutoState.WAIT_SHOOTER_READY_1;
-                    actionTimer.resetTimer();
-                }
+            
+            case LIMELIGHT_CALIBRATE:
+                // Unused — fully manual aim for first shot
+                transitionTo(AutoState.WAIT_SHOOTER_READY_1);
                 break;
                 
             case WAIT_SHOOTER_READY_1:
-                // Wait for shooter to reach target velocity
                 if (robot.shooting.isShooterAtTargetVelocity() || 
                     elapsed > RobotConstants.Auto.SHOOTER_SPINUP_SECONDS) {
-                    currentState = AutoState.WAIT_TURRET_AIM_1;
-                    actionTimer.resetTimer();
+                    transitionTo(AutoState.WAIT_TURRET_AIM_1);
                 }
                 break;
                 
             case WAIT_TURRET_AIM_1:
-                // Wait for turret to be on target
                 if (robot.autoTurret.isOnTarget() || 
                     elapsed > RobotConstants.Auto.TURRET_AIM_TIMEOUT) {
-                    currentState = AutoState.SHOOT_SEQUENCE_1;
-                    actionTimer.resetTimer();
+                    transitionTo(AutoState.SHOOT_SEQUENCE_1);
                 }
                 break;
                 
             case SHOOT_SEQUENCE_1:
-                // Start auto-shoot sequence
                 robot.autoShoot.start(RobotConstants.Auto.BALLS_PER_CYCLE);
-                currentState = AutoState.WAIT_SHOOT_COMPLETE_1;
-                actionTimer.resetTimer();
+                transitionTo(AutoState.WAIT_SHOOT_COMPLETE_1);
                 break;
                 
             case WAIT_SHOOT_COMPLETE_1:
-                // Wait for shooting to complete (timeout is safety fallback)
                 if (!robot.autoShoot.isInProgress()) {
-                    currentState = AutoState.DRIVE_TO_INTAKE;
-                    actionTimer.resetTimer();
+                    if (stopAfterPhase == TestPhase.FIRST_SHOOT) {
+                        currentState = AutoState.PHASE_COMPLETE;
+                    } else {
+                        transitionTo(AutoState.DRIVE_TO_INTAKE);
+                    }
                 } else if (elapsed > RobotConstants.Auto.SHOOT_SEQUENCE_TIMEOUT) {
                     robot.autoShoot.stop();
-                    currentState = AutoState.DRIVE_TO_INTAKE;
-                    actionTimer.resetTimer();
+                    if (stopAfterPhase == TestPhase.FIRST_SHOOT) {
+                        currentState = AutoState.PHASE_COMPLETE;
+                    } else {
+                        transitionTo(AutoState.DRIVE_TO_INTAKE);
+                    }
                 }
                 break;
                 
-            // ==================== DRIVE TO INTAKE ====================
-                
             case DRIVE_TO_INTAKE:
-                // Switch to intake mode and start driving
+                // Turret stays at manual aim — no auto-tracking during auto.
                 if (robot.autoIntake != null) {
                     robot.autoIntake.setIntakeMode();
+                    robot.autoIntake.resetBallCount();
                     robot.autoIntake.startIntakeMotor();
                 }
                 if (robot.led != null) {
                     robot.led.setIntakeModeColor();
                 }
                 follower.followPath(pathToIntake);
-                currentState = AutoState.WAIT_ARRIVE_INTAKE;
-                actionTimer.resetTimer();
+                transitionTo(AutoState.WAIT_ARRIVE_INTAKE);
                 break;
                 
             case WAIT_ARRIVE_INTAKE:
-                // Wait to arrive at intake zone
                 if (!follower.isBusy() || elapsed > RobotConstants.Auto.PATH_TIMEOUT) {
-                    currentState = AutoState.INTAKING;
-                    actionTimer.resetTimer();
+                    if (stopAfterPhase == TestPhase.DRIVE_INTAKE) {
+                        if (robot.autoIntake != null) robot.autoIntake.stopIntakeMotor();
+                        currentState = AutoState.PHASE_COMPLETE;
+                    } else {
+                        transitionTo(AutoState.INTAKE_FORWARD);
+                    }
                 }
                 break;
                 
-            // ==================== INTAKE SEQUENCE ====================
+            case INTAKE_FORWARD:
+                follower.setMaxPower(RobotConstants.Auto.INTAKE_FORWARD_SPEED);
+                follower.followPath(pathIntakeForward);
+                transitionTo(AutoState.WAIT_INTAKE_COMPLETE);
+                break;
                 
-            case INTAKING:
-                // Wait for intake time (auto-advance handles ball detection)
-                if (elapsed > RobotConstants.Auto.INTAKE_DURATION) {
-                    // Stop intake and switch to launch mode
+            case WAIT_INTAKE_COMPLETE:
+                follower.setMaxPower(RobotConstants.Auto.INTAKE_FORWARD_SPEED);
+                
+                boolean ballsFull = (robot.autoIntake != null && 
+                    robot.autoIntake.getBallsLoaded() >= RobotConstants.Auto.BALLS_PER_CYCLE);
+                boolean pathDone = !follower.isBusy();
+                boolean timedOut = elapsed > RobotConstants.Auto.INTAKE_FORWARD_TIMEOUT;
+                
+                if (ballsFull || pathDone || timedOut) {
+                    follower.setMaxPower(1.0);
                     if (robot.autoIntake != null) {
                         robot.autoIntake.stopIntakeMotor();
                         robot.autoIntake.setLaunchMode();
@@ -318,122 +387,155 @@ public class Auto_BlueNear extends OpMode {
                     if (robot.led != null) {
                         robot.led.setLaunchModeColor();
                     }
-                    currentState = AutoState.DRIVE_TO_LAUNCH;
-                    actionTimer.resetTimer();
+                    if (stopAfterPhase == TestPhase.INTAKE) {
+                        currentState = AutoState.PHASE_COMPLETE;
+                    } else {
+                        transitionTo(AutoState.DRIVE_TO_LAUNCH);
+                    }
                 }
                 break;
                 
-            // ==================== DRIVE TO LAUNCH ====================
-                
             case DRIVE_TO_LAUNCH:
-                // Drive back to launch zone (flywheel already running)
                 follower.followPath(pathToLaunch);
-                currentState = AutoState.WAIT_ARRIVE_LAUNCH;
-                actionTimer.resetTimer();
+                transitionTo(AutoState.WAIT_ARRIVE_LAUNCH);
                 break;
                 
             case WAIT_ARRIVE_LAUNCH:
-                // Wait to arrive at launch zone
                 if (!follower.isBusy() || elapsed > RobotConstants.Auto.PATH_TIMEOUT) {
-                    currentState = AutoState.WAIT_TURRET_AIM_2;
-                    actionTimer.resetTimer();
+                    if (stopAfterPhase == TestPhase.DRIVE_LAUNCH) {
+                        currentState = AutoState.PHASE_COMPLETE;
+                    } else {
+                        transitionTo(AutoState.WAIT_TURRET_AIM_2);
+                    }
                 }
                 break;
                 
-            // ==================== SECOND SHOOTING ====================
-                
             case WAIT_TURRET_AIM_2:
-                // Wait for turret to be on target (flywheel already at speed)
                 if (robot.autoTurret.isOnTarget() || 
                     elapsed > RobotConstants.Auto.TURRET_AIM_TIMEOUT) {
-                    currentState = AutoState.SHOOT_SEQUENCE_2;
-                    actionTimer.resetTimer();
+                    transitionTo(AutoState.SHOOT_SEQUENCE_2);
                 }
                 break;
                 
             case SHOOT_SEQUENCE_2:
-                // Start auto-shoot sequence
                 robot.autoShoot.start(RobotConstants.Auto.BALLS_PER_CYCLE);
-                currentState = AutoState.WAIT_SHOOT_COMPLETE_2;
-                actionTimer.resetTimer();
+                transitionTo(AutoState.WAIT_SHOOT_COMPLETE_2);
                 break;
                 
             case WAIT_SHOOT_COMPLETE_2:
-                // Wait for shooting to complete (timeout is safety fallback)
                 if (!robot.autoShoot.isInProgress()) {
                     robot.shooting.stopShooter();
-                    currentState = AutoState.COMPLETE;
+                    if (stopAfterPhase == TestPhase.SECOND_SHOOT) {
+                        currentState = AutoState.PHASE_COMPLETE;
+                    } else {
+                        transitionTo(AutoState.DRIVE_TO_PARK);
+                    }
                 } else if (elapsed > RobotConstants.Auto.SHOOT_SEQUENCE_TIMEOUT) {
                     robot.autoShoot.stop();
                     robot.shooting.stopShooter();
+                    if (stopAfterPhase == TestPhase.SECOND_SHOOT) {
+                        currentState = AutoState.PHASE_COMPLETE;
+                    } else {
+                        transitionTo(AutoState.DRIVE_TO_PARK);
+                    }
+                }
+                break;
+                
+            case DRIVE_TO_PARK:
+                follower.followPath(pathToPark);
+                transitionTo(AutoState.WAIT_ARRIVE_PARK);
+                break;
+                
+            case WAIT_ARRIVE_PARK:
+                if (!follower.isBusy() || elapsed > RobotConstants.Auto.PARK_TIMEOUT) {
                     currentState = AutoState.COMPLETE;
                 }
                 break;
                 
-            // ==================== COMPLETE ====================
-                
             case COMPLETE:
-                // Auto is done
                 robot.stopAll();
+                break;
+                
+            case PHASE_COMPLETE:
+                break;
+                
+            case PAUSED:
                 break;
         }
     }
     
-    // ========== TELEMETRY ==========
-    
-    private void displayInitTelemetry() {
-        telemetry.addData("Status", "✓ Initialized");
-        telemetry.addData("Alliance", ALLIANCE == LimelightManager.Alliance.BLUE ? "BLUE" : "RED");
-        telemetry.addData("Start Pose", "(%.1f, %.1f) @ %.1f°", 
-            START_POSE.getX(), START_POSE.getY(), Math.toDegrees(START_POSE.getHeading()));
-        telemetry.addLine();
-        telemetry.addLine("─── CONFIGURATION ───");
-        telemetry.addData("Flywheel", "LOW @ %.0f ticks/sec", SHOOTER_VELOCITY);
-        telemetry.addData("Hood", "SHORT RANGE @ %.2f", HOOD_POSITION);
-        telemetry.addData("Balls/Cycle", RobotConstants.Auto.BALLS_PER_CYCLE);
-        telemetry.addLine();
-        telemetry.addData("Sequence", "Shoot → Intake @ (%.0f,%.0f) → Shoot", 
-            INTAKE_POSE.getX(), INTAKE_POSE.getY());
-        telemetry.addLine();
-        telemetry.addLine(">>> READY TO START <<<");
-        telemetry.update();
+    private void transitionTo(AutoState nextState) {
+        if (manualAdvanceMode) {
+            pausedFromState = currentState;
+            currentState = AutoState.PAUSED;
+            waitingForAdvance = true;
+        } else {
+            currentState = nextState;
+            actionTimer.resetTimer();
+        }
     }
     
+    private AutoState getNextState(AutoState fromState) {
+        AutoState[] states = AutoState.values();
+        int idx = fromState.ordinal();
+        if (idx < states.length - 3) {
+            return states[idx + 1];
+        }
+        return AutoState.COMPLETE;
+    }
+    
+    // ========== TELEMETRY ==========
+    
     private void updateTelemetry() {
-        telemetry.addData("State", currentState.toString());
-        telemetry.addData("Timer", "%.2f s", actionTimer.getElapsedTimeSeconds());
+        telemetry.addLine("══════════════════════════════════════");
+        telemetry.addLine("   Blue Near - RUNNING");
+        telemetry.addLine("══════════════════════════════════════");
+        
         telemetry.addLine();
+        if (currentState == AutoState.PAUSED) {
+            telemetry.addLine(">>> PAUSED - Press A to advance <<<");
+            telemetry.addData("Paused at", pausedFromState.toString());
+            telemetry.addData("Next state", getNextState(pausedFromState).toString());
+        } else if (currentState == AutoState.PHASE_COMPLETE) {
+            telemetry.addLine(">>> PHASE COMPLETE <<<");
+            telemetry.addData("Stopped after", stopAfterPhase.displayName);
+        } else {
+            telemetry.addData("STATE", ">> " + currentState.toString() + " <<");
+        }
         
-        // Position
-        telemetry.addData("Position", "(%.1f, %.1f) @ %.1f°",
-            robot.localization.getX(), 
-            robot.localization.getY(),
-            robot.localization.getHeadingDegrees());
+        telemetry.addData("Timer", "%.2f s", actionTimer.getElapsedTimeSeconds());
         
-        // Auto-turret status
+        telemetry.addLine();
+        telemetry.addData("Stop After", stopAfterPhase.displayName);
+        telemetry.addData("Manual Mode", manualAdvanceMode ? "ON" : "OFF");
+        
+        telemetry.addLine();
+        telemetry.addData("Position", "(%.1f, %.1f) @ %.1f",
+            robot.localization.getX(), robot.localization.getY(), robot.localization.getHeadingDegrees());
+        
         if (robot.autoTurret != null) {
-            telemetry.addData("Turret", "%s %s",
-                robot.autoTurret.isAnyModeEnabled() ? "TRACKING" : "OFF",
-                robot.autoTurret.isOnTarget() ? "✓" : "⏳");
+            telemetry.addData("Turret", "%.1f (phys %.1f) %s",
+                robot.autoTurret.getCurrentAngleDegrees(),
+                robot.autoTurret.getPhysicalAngleDegrees(),
+                robot.autoTurret.isOnTarget() ? "ON TARGET" : "tracking");
         }
         
-        // Shooter status
-        telemetry.addData("Shooter", "%.0f/%.0f %s",
-            robot.shooting.getCurrentVelocity(),
-            SHOOTER_VELOCITY,
-            robot.shooting.isShooterAtTargetVelocity() ? "✓" : "⏳");
+        telemetry.addData("Shooter", "%.0f / %.0f %s",
+            robot.shooting.getCurrentVelocity(), SHOOTER_VELOCITY,
+            robot.shooting.isShooterAtTargetVelocity() ? "READY" : "spinning");
         
-        // Auto-shoot status
         if (robot.autoShoot.isInProgress()) {
-            telemetry.addData("Shooting", "%d/%d balls",
-                robot.autoShoot.getBallsShot(),
-                robot.autoShoot.getBallsToShoot());
+            telemetry.addData("Auto-Shoot", "%d/%d balls",
+                robot.autoShoot.getBallsShot(), robot.autoShoot.getBallsToShoot());
         }
         
-        // Mode and path status
-        telemetry.addData("Mode", robot.autoIntake.isIntakeMode() ? "INTAKE" : "LAUNCH");
-        telemetry.addData("Path", follower.isBusy() ? "Moving" : "Done");
+        if (robot.autoIntake != null) {
+            telemetry.addData("Mode", robot.autoIntake.isIntakeMode() ? "INTAKE" : "LAUNCH");
+            telemetry.addData("Balls", "%d / %d", 
+                robot.autoIntake.getBallsLoaded(), RobotConstants.Auto.BALLS_PER_CYCLE);
+        }
         
+        telemetry.addData("Path", follower.isBusy() ? "MOVING" : "IDLE");
         telemetry.update();
     }
 }

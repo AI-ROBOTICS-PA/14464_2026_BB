@@ -37,7 +37,8 @@ public class AutoShootSystem {
     // Timing constants
     private static final long PUSH_DURATION_MS = 300;
     private static final long RETRACT_TIMEOUT_MS = 500;
-    private static final long ADVANCE_DURATION_MS = 300;
+    private static final long ADVANCE_DURATION_MS = 300;       // Time for small moves between adjacent slots
+    private static final long INITIAL_POSITION_DURATION_MS = 700;  // Time for initial servo travel to highest slot (large move)
 
     /**
      * Initialize auto-shoot system
@@ -138,8 +139,9 @@ public class AutoShootSystem {
                     }
                     turretMoved = true;
                 }
-                // Wait for turret servo to reach position before pushing
-                if (elapsed > ADVANCE_DURATION_MS) {
+                // Wait for servo to physically reach the highest slot (large travel distance)
+                // Uses longer timeout than ADVANCE since this can be a full-range move (e.g., 0.0 → 0.905)
+                if (elapsed > INITIAL_POSITION_DURATION_MS) {
                     turretMoved = false; // Reset for ADVANCE state use
                     state = AutoShootState.PUSH;
                     stateStartTime = System.currentTimeMillis();

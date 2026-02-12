@@ -7,7 +7,8 @@ import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
  * Example: Using Turret in Autonomous
  * DECODE 14464 - FTC 2026
  */
-@Autonomous(name = "Turret Auto Example", group = "DECODE")
+// DISABLED: Example only — not for competition
+// @Autonomous(name = "Turret Auto Example", group = "DECODE")
 public class TurretAutoExample extends LinearOpMode {
 
     private Turret turret;

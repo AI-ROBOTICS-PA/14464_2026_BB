@@ -143,6 +143,7 @@ public class DecodeTeleOp extends OpMode {
     private boolean prevGP2Y = false; // For auto-calibration toggle button
     private boolean prevGP2A = false; // For alliance toggle button
     private boolean prevGP1B = false; // For manual ball advance (sensor broken fallback)
+    private boolean prevGP1Y = false; // For hard turret reset button
 
     // ========== RUMBLE FEEDBACK ==========
     private boolean wasReadyToShoot = false; // Track state change for rumble
@@ -309,6 +310,14 @@ public class DecodeTeleOp extends OpMode {
         // Enable goal tracking (always - position is known from Auto or from default)
         if (robot.autoTurret != null) {
             robot.autoTurret.enableCombinedGoalTracking();
+            
+            // Restore turret offset from Auto → TeleOp
+            if (RobotMotors.hasSavedTurretOffset()) {
+                robot.autoTurret.restoreOffset(
+                    RobotMotors.getSavedTurretOffsetTicks(),
+                    RobotMotors.getSavedInitialOffsetDegrees()
+                );
+            }
         }
 
         String allianceStr = isRed ? "RED" : "BLUE";
@@ -317,7 +326,11 @@ public class DecodeTeleOp extends OpMode {
         telemetry.addLine("✅ Shooter Running at " + currentShooterVelocity + " (" + velocityModeName + ")");
         telemetry.addLine("✅ Hood at " + HOOD_POSITION_NAMES[currentHoodIndex]);
         telemetry.addLine("✅ Auto-Turret: GOAL TRACKING (GP2 X to toggle)");
+        if (RobotMotors.hasSavedTurretOffset()) {
+            telemetry.addLine("✅ Turret Offset: " + String.format("%.1f°", RobotMotors.getSavedInitialOffsetDegrees()) + " (from Auto)");
+        }
         telemetry.addLine("ℹ️ Intake Motor: OFF (switch to INTAKE mode to enable)");
+        telemetry.addLine("ℹ️ GP1 Y = HARD TURRET RESET (center turret first!)");
         telemetry.update();
     }
 
@@ -634,6 +647,21 @@ public class DecodeTeleOp extends OpMode {
             performAutoCalibration();
         }
 
+        // ========== GP1 Y/TRIANGLE: HARD TURRET RESET ==========
+        // User physically moves turret to center, then presses Y.
+        // Resets encoder to 0, clears ALL offsets. Encoder 0 = physical center.
+        boolean gp1YPressed = gamepad1.y || gamepad1.triangle;
+        if (gp1YPressed && !prevGP1Y && robot.autoTurret != null) {
+            robot.autoTurret.hardReset();
+            robot.autoTurret.enableCombinedGoalTracking();
+            // Clear saved offset so it doesn't get restored
+            RobotMotors.clearSavedTurretOffset();
+            gamepad1.rumble(500);
+            gamepad2.rumble(500);
+            telemetry.log().add("🔄 TURRET HARD RESET — Encoder=0, Offset=0");
+        }
+        prevGP1Y = gp1YPressed;
+
         // ========== EMERGENCY STOP (Back/Share + Start/Options) ==========
         // Press Back+Start (Xbox) or Share+Options (PS4) together to immediately stop all motors
         boolean gp1Emergency = (gamepad1.back || gamepad1.share) && (gamepad1.start || gamepad1.options);
@@ -855,7 +883,8 @@ public class DecodeTeleOp extends OpMode {
 
     /**
      * Enforce turret rotation limits for manual control
-     * Prevents turret from rotating beyond safe limits (±135° from center)
+     * Prevents turret from rotating beyond safe PHYSICAL limits (±135° from center)
+     * Accounts for initial offset (encoder 0 may not be physical 0)
      * Includes soft limit zone that slows down near limits
      * @param requestedPower Requested motor power (-1.0 to 1.0)
      * @return Power with limits enforced (may be reduced or zero)
@@ -865,34 +894,33 @@ public class DecodeTeleOp extends OpMode {
             return 0.0; // No turret motor available
         }
         
-        // Get current encoder position
-        int currentPosition = robot.motors.turret.getCurrentPosition();
+        // Use PHYSICAL angle for limit checks (accounts for initial offset)
+        double physicalDegrees = (robot.autoTurret != null) 
+            ? robot.autoTurret.getPhysicalAngleDegrees()
+            : robot.motors.turret.getCurrentPosition() / RobotConstants.Turret.TICKS_PER_DEGREE;
+        double maxRotation = RobotConstants.Turret.MAX_ROTATION_DEGREES;
+        double softLimitDegrees = RobotConstants.Turret.SOFT_LIMIT_DEGREES;
         
-        // Get limit constants
-        int maxPosition = RobotConstants.Turret.MAX_ENCODER_POSITION;
-        int minPosition = RobotConstants.Turret.MIN_ENCODER_POSITION;
-        double softLimitZone = RobotConstants.Turret.SOFT_LIMIT_DEGREES * RobotConstants.Turret.TICKS_PER_DEGREE;
-        
-        // Hard limit check - stop if at max limit and trying to go further positive
-        if (currentPosition >= maxPosition && requestedPower > 0) {
-            return 0.0; // Stop - can't go further positive
+        // Hard limit check - stop if at max physical limit and trying to go further positive
+        if (physicalDegrees >= maxRotation && requestedPower > 0) {
+            return 0.0;
         }
         
-        // Hard limit check - stop if at min limit and trying to go further negative
-        if (currentPosition <= minPosition && requestedPower < 0) {
-            return 0.0; // Stop - can't go further negative
+        // Hard limit check - stop if at min physical limit and trying to go further negative
+        if (physicalDegrees <= -maxRotation && requestedPower < 0) {
+            return 0.0;
         }
         
-        // Soft limit - slow down near max limit
-        if (currentPosition > (maxPosition - softLimitZone) && requestedPower > 0) {
-            double reduction = (maxPosition - currentPosition) / softLimitZone;
-            requestedPower *= Math.max(0.1, reduction); // At least 10% power
+        // Soft limit - slow down near max physical limit
+        if (physicalDegrees > (maxRotation - softLimitDegrees) && requestedPower > 0) {
+            double reduction = (maxRotation - physicalDegrees) / softLimitDegrees;
+            requestedPower *= Math.max(0.1, reduction);
         }
         
-        // Soft limit - slow down near min limit
-        if (currentPosition < (minPosition + softLimitZone) && requestedPower < 0) {
-            double reduction = (currentPosition - minPosition) / softLimitZone;
-            requestedPower *= Math.max(0.1, reduction); // At least 10% power
+        // Soft limit - slow down near min physical limit
+        if (physicalDegrees < (-maxRotation + softLimitDegrees) && requestedPower < 0) {
+            double reduction = (physicalDegrees - (-maxRotation)) / softLimitDegrees;
+            requestedPower *= Math.max(0.1, reduction);
         }
         
         return requestedPower;
@@ -959,6 +987,8 @@ public class DecodeTeleOp extends OpMode {
         telemetry.addData("AutoTurret Enabled", autoTurretEnabled);
         telemetry.addData("Manual Override", turretManualOverride);
         if (robot.autoTurret != null) {
+            telemetry.addData("Physical Angle", String.format("%.1f°", robot.autoTurret.getPhysicalAngleDegrees()));
+            telemetry.addData("Initial Offset", String.format("%.1f°", robot.autoTurret.getInitialOffsetDegrees()));
             telemetry.addData("Manual Offset", String.format("%.1f°", robot.autoTurret.getManualOffsetDegrees()));
         } else {
             telemetry.addLine("⚠️ AUTO-TURRET SYSTEM IS NULL!");
@@ -1107,6 +1137,7 @@ public class DecodeTeleOp extends OpMode {
         telemetry.addData("D-Pad L/R", "Manual Turret");
         telemetry.addData("L Trigger", "Hold = HIGH Velocity");
         telemetry.addData("R Trigger", "Manual Push");
+        telemetry.addData("Y/△", "HARD TURRET RESET (center first!)");
 
         telemetry.addLine();
         telemetry.addLine("─── GP2 (OPERATOR) ───");
@@ -1132,9 +1163,10 @@ public class DecodeTeleOp extends OpMode {
     @Override
     public void stop() {
         robot.stopAll();
-        // Clear saved turret position so next standalone TeleOp starts fresh.
+        // Clear saved turret position/offset so next standalone TeleOp starts fresh.
         // Without this, the next TeleOp run thinks Auto ran and skips encoder reset.
         RobotMotors.clearSavedTurretPosition();
+        RobotMotors.clearSavedTurretOffset();
         telemetry.addLine("⏹️ TeleOp Stopped");
         telemetry.update();
     }

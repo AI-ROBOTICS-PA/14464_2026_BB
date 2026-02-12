@@ -18,6 +18,7 @@ public class AutoTurretSystem {
     private boolean enabled = false;
     private boolean counterRotationEnabled = false;  // Counter-rotation mode
     private boolean combinedGoalTrackingEnabled = false;  // Combined: position + rotation tracking
+    private boolean holdPositionEnabled = false;  // Hold turret at current encoder position using PID
     private boolean paused = false;  // When true, update() skips motor control (for manual override)
     
     // ========== LAUNCH MODE ONLY CONTROL ==========
@@ -45,7 +46,12 @@ public class AutoTurretSystem {
     // When operator manually adjusts turret, the difference between manual position
     // and auto-calculated position is saved here. Applied every update so the
     // correction persists while auto-tracking continues.
+    // Includes BOTH the initial program offset AND any manual D-pad adjustments.
     private double manualOffsetTicks = 0;
+    
+    // Initial offset set by auto program (encoder 0 ≠ physical 0)
+    // Used for limit calculations and telemetry
+    private double initialOffsetDegrees = 0;
 
     // ========== ALLIANCE-BASED GOAL TRACKING ==========
     // Goal position changes based on alliance (Blue vs Red)
@@ -250,6 +256,28 @@ public class AutoTurretSystem {
     }
 
     /**
+     * Hold turret at its current encoder position using PID.
+     * Use during auto when no tracking mode is active but the turret must not drift.
+     * The turret will actively resist movement from robot acceleration/deceleration.
+     */
+    public void holdCurrentPosition() {
+        holdPositionEnabled = true;
+        // Target = current encoder position (should be 0 after init reset)
+        if (motors != null && motors.turret != null) {
+            turretTargetPosition = motors.turret.getCurrentPosition();
+        }
+        previousError = 0;
+        integral = 0;
+    }
+
+    /**
+     * Stop holding position
+     */
+    public void stopHoldPosition() {
+        holdPositionEnabled = false;
+    }
+
+    /**
      * Pause auto-turret updates without changing the enabled/tracking state.
      * Use for manual override - auto-turret stays "enabled" but stops controlling the motor.
      * Call resume() when manual control is done to continue tracking from the new position.
@@ -286,14 +314,104 @@ public class AutoTurretSystem {
     }
 
     /**
-     * Clear the manual offset (reset to 0).
+     * Clear MANUAL adjustments but keep initial program offset.
      * Use this after Limelight corrects robot position - the auto-tracking
-     * calculation should now be accurate, so manual corrections are no longer needed.
+     * calculation should now be accurate, so manual D-pad corrections are no longer needed.
+     * The initial program offset (e.g., 42° for Blue Far) is preserved.
      */
     public void clearManualOffset() {
-        manualOffsetTicks = 0;
+        // Reset to initial offset only (remove any D-pad or Limelight adjustments)
+        manualOffsetTicks = -initialOffsetDegrees * TICKS_PER_DEGREE;
         previousError = 0;
         integral = 0;
+    }
+
+    /**
+     * Set initial turret offset for manual pre-positioning.
+     * User manually aims turret before init. Encoder resets to 0 but turret
+     * is physically at this angle. This offset is preserved through auto-tracking.
+     *
+     * Call this AFTER enableCombinedGoalTracking() — it overrides the cleared offset.
+     *
+     * @param angleDegrees Physical angle turret is at (e.g., 42 for Blue Far)
+     */
+    public void setInitialOffset(double angleDegrees) {
+        initialOffsetDegrees = angleDegrees;
+        // Offset makes auto-tracking produce encoder target = 0 when goal needs angleDegrees
+        // Formula: target = turretAngleNeeded * TPD + manualOffsetTicks
+        // When turretAngleNeeded = angleDegrees and target should = 0:
+        //   0 = angleDegrees * TPD + manualOffsetTicks
+        //   manualOffsetTicks = -angleDegrees * TPD
+        manualOffsetTicks = -angleDegrees * TICKS_PER_DEGREE;
+        turretTargetPosition = 0; // Current encoder position
+        previousError = 0;
+        integral = 0;
+    }
+    
+    /**
+     * Get the initial offset in degrees (set by auto program)
+     */
+    public double getInitialOffsetDegrees() {
+        return initialOffsetDegrees;
+    }
+    
+    /**
+     * Get the current manual offset in ticks (for saving between OpModes)
+     */
+    public double getManualOffsetTicks() {
+        return manualOffsetTicks;
+    }
+    
+    /**
+     * Restore offset from previous OpMode (Auto → TeleOp).
+     * Sets both manualOffsetTicks and initialOffsetDegrees from saved values.
+     */
+    public void restoreOffset(double offsetTicks, double initialDegrees) {
+        this.manualOffsetTicks = offsetTicks;
+        this.initialOffsetDegrees = initialDegrees;
+        turretTargetPosition = (motors != null && motors.turret != null)
+            ? motors.turret.getCurrentPosition() : 0;
+        previousError = 0;
+        integral = 0;
+    }
+    
+    /**
+     * Get the PHYSICAL turret angle (encoder + offset).
+     * This is the true angle the turret is pointing at, accounting for
+     * the initial offset from manual pre-positioning.
+     */
+    public double getPhysicalAngleDegrees() {
+        if (motors == null || motors.turret == null) return initialOffsetDegrees;
+        double encoderDegrees = motors.turret.getCurrentPosition() / TICKS_PER_DEGREE;
+        return encoderDegrees + initialOffsetDegrees;
+    }
+    
+    /**
+     * Hard reset: User physically moves turret to center, then calls this.
+     * Resets encoder to 0, clears ALL offsets, resets PID.
+     * After this, encoder 0 = physical center (0°).
+     */
+    public void hardReset() {
+        if (motors == null || motors.turret == null) return;
+        
+        // Reset encoder to 0
+        motors.turret.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        motors.turret.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        motors.turret.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        
+        // Clear ALL offsets
+        manualOffsetTicks = 0;
+        initialOffsetDegrees = 0;
+        turretTargetPosition = 0;
+        
+        // Reset PID
+        previousError = 0;
+        integral = 0;
+        
+        // Reset tracking state
+        totalRobotRotation = 0;
+        lastTotalRotation = 0;
+        previousHeadingChange = 0;
     }
 
     /**
@@ -313,7 +431,7 @@ public class AutoTurretSystem {
         lastTotalRotation = 0;
         previousHeadingChange = 0;
         hasUnwound = false;
-        manualOffsetTicks = 0;  // Clear manual offset on fresh enable
+        manualOffsetTicks = 0;  // Clear offset on fresh enable (setInitialOffset() sets it after)
         if (motors != null && motors.turret != null) {
             turretTargetPosition = motors.turret.getCurrentPosition();
         }
@@ -463,6 +581,9 @@ public class AutoTurretSystem {
             updateCounterRotation();
         } else if (enabled) {
             updateGoalTracking();
+        } else if (holdPositionEnabled) {
+            // Actively hold turret at target position using PID (prevents drift during driving)
+            runTurretToPosition();
         }
     }
 
@@ -624,24 +745,25 @@ public class AutoTurretSystem {
 
     /**
      * Check if turret is AT its rotation limit (goal is behind robot)
-     * This means the turret can't reach the goal angle and is at max/min position
+     * Uses PHYSICAL angle (accounts for initial offset)
      */
     public boolean isAtLimit() {
         if (motors == null || motors.turret == null) return false;
-        double currentDegrees = motors.turret.getCurrentPosition() / TICKS_PER_DEGREE;
+        double physicalDegrees = getPhysicalAngleDegrees();
         double maxRotation = RobotConstants.Turret.MAX_ROTATION_DEGREES;
         // Check if at either limit (within 5 degrees)
-        return Math.abs(Math.abs(currentDegrees) - maxRotation) < 5.0;
+        return Math.abs(Math.abs(physicalDegrees) - maxRotation) < 5.0;
     }
     
     /**
      * Check if turret is near rotation limits
+     * Uses PHYSICAL angle (accounts for initial offset)
      */
     public boolean isNearLimits() {
         if (motors == null || motors.turret == null) return false;
-        int currentPosition = motors.turret.getCurrentPosition();
-        return (currentPosition > MAX_ENCODER_POSITION - 100) ||
-               (currentPosition < MIN_ENCODER_POSITION + 100);
+        double physicalDegrees = getPhysicalAngleDegrees();
+        double maxRotation = RobotConstants.Turret.MAX_ROTATION_DEGREES;
+        return Math.abs(physicalDegrees) > (maxRotation - 10.0);
     }
 
     /**
@@ -796,18 +918,20 @@ public class AutoTurretSystem {
         if (Math.abs(turretAngleNeeded) > maxRotation) {
             // Goal is in the dead zone behind the robot.
             // Hold at whichever limit the turret is ALREADY closest to.
-            // This prevents the turret from snapping to the opposite side when
-            // normalizeAngle flips the sign at the ±180° boundary.
-            double currentTurretDegrees = motors.turret.getCurrentPosition() / TICKS_PER_DEGREE;
-            turretAngleNeeded = (currentTurretDegrees >= 0) ? maxRotation : -maxRotation;
+            // Use PHYSICAL angle (accounts for initial offset) for correct snap decision.
+            double physicalDegrees = getPhysicalAngleDegrees();
+            turretAngleNeeded = (physicalDegrees >= 0) ? maxRotation : -maxRotation;
         }
         
         // Convert angle to encoder ticks + apply manual offset
         turretTargetPosition = turretAngleNeeded * TICKS_PER_DEGREE + manualOffsetTicks;
         
-        // Clamp target to encoder limits (wire safety)
-        turretTargetPosition = Math.max(MIN_ENCODER_POSITION, 
-                                        Math.min(MAX_ENCODER_POSITION, turretTargetPosition));
+        // Clamp target to OFFSET-AWARE encoder limits (wire safety)
+        // Physical limits are ±MAX_ROTATION_DEGREES. Encoder limits shift by offset.
+        double effectiveMaxEncoder = maxRotation * TICKS_PER_DEGREE + manualOffsetTicks;
+        double effectiveMinEncoder = -maxRotation * TICKS_PER_DEGREE + manualOffsetTicks;
+        turretTargetPosition = Math.max(effectiveMinEncoder, 
+                                        Math.min(effectiveMaxEncoder, turretTargetPosition));
         
         // Track for telemetry
         lastAngleToGoal = fieldAngleToGoal;

@@ -17,6 +17,13 @@ public class RobotMotors {
     private static int savedTurretPosition = 0;
     private static boolean hasSavedPosition = false;
     
+    // ========== TURRET OFFSET PERSISTENCE ==========
+    // Persists the manual offset (in ticks) from Auto → TeleOp
+    // This carries the initial program angle + any Limelight corrections
+    private static double savedTurretOffsetTicks = 0;
+    private static double savedInitialOffsetDegrees = 0;
+    private static boolean hasSavedOffset = false;
+    
     /**
      * Save current turret position for use in next OpMode
      * Call this at the END of Autonomous before stopping
@@ -48,6 +55,45 @@ public class RobotMotors {
     public static void clearSavedTurretPosition() {
         savedTurretPosition = 0;
         hasSavedPosition = false;
+    }
+    
+    /**
+     * Save turret offset for use in next OpMode (Auto → TeleOp)
+     */
+    public static void saveTurretOffset(double offsetTicks, double initialDegrees) {
+        savedTurretOffsetTicks = offsetTicks;
+        savedInitialOffsetDegrees = initialDegrees;
+        hasSavedOffset = true;
+    }
+    
+    /**
+     * Check if there's a saved turret offset from previous OpMode
+     */
+    public static boolean hasSavedTurretOffset() {
+        return hasSavedOffset;
+    }
+    
+    /**
+     * Get the saved turret offset (in encoder ticks)
+     */
+    public static double getSavedTurretOffsetTicks() {
+        return savedTurretOffsetTicks;
+    }
+    
+    /**
+     * Get the saved initial offset (in degrees)
+     */
+    public static double getSavedInitialOffsetDegrees() {
+        return savedInitialOffsetDegrees;
+    }
+    
+    /**
+     * Clear the saved offset
+     */
+    public static void clearSavedTurretOffset() {
+        savedTurretOffsetTicks = 0;
+        savedInitialOffsetDegrees = 0;
+        hasSavedOffset = false;
     }
 
     /**

@@ -4,16 +4,18 @@ import com.pedropathing.follower.Follower;
 import com.pedropathing.geometry.BezierLine;
 import com.pedropathing.geometry.Pose;
 import com.pedropathing.paths.Path;
+import com.pedropathing.paths.PathChain;
 import com.pedropathing.util.Timer;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 
 import org.firstinspires.ftc.teamcode.decode14464.systems.LimelightManager;
 import org.firstinspires.ftc.teamcode.decode14464.systems.RobotConstants;
+import org.firstinspires.ftc.teamcode.decode14464.systems.RobotMotors;
 import org.firstinspires.ftc.teamcode.decode14464.systems.RobotSystem;
 
 /**
- * TEST VERSION: Auto Blue Far - Phase-by-Phase Testing
+ * Auto Blue Far - Phase-by-Phase Selection
  * 
  * SEQUENCE (8 steps):
  *   Step 0: Begin on initial pose (50, 7.5) heading 180°
@@ -42,10 +44,8 @@ import org.firstinspires.ftc.teamcode.decode14464.systems.RobotSystem;
  * 
  * DURING RUN (if Manual Advance ON):
  * - Press A/Cross to advance to next state
- * 
- * This allows you to test each phase independently!
  */
-@Autonomous(name = "TEST Blue Far (Phase Select)", group = "DECODE Test")
+@Autonomous(name = "Auto-Blue Far (Phase Select)", group = "DECODE Auto")
 public class Auto_BlueFar_TEST extends OpMode {
 
     // ========== ROBOT SYSTEM ==========
@@ -94,12 +94,11 @@ public class Auto_BlueFar_TEST extends OpMode {
     
     // ========== STATE MACHINE ==========
     private enum AutoState {
-        // Phase 1: Init Turret
+        // Phase 1: Init Turret (offset-based, no motor movement)
         INIT,
-        MOVE_TURRET_INITIAL,
-        WAIT_TURRET_INITIAL,
         
         // Phase 2: First Shoot (preloaded 3 balls)
+        LIMELIGHT_CALIBRATE,    // One-time: fine-tune turret with AprilTag after initial offset
         WAIT_SHOOTER_READY_1,
         WAIT_TURRET_AIM_1,
         SHOOT_SEQUENCE_1,
@@ -138,10 +137,10 @@ public class Auto_BlueFar_TEST extends OpMode {
     private AutoState pausedFromState = null;  // Track where we paused from
     
     // ========== PATHS ==========
-    private Path pathToIntake;          // START_POSE → INTAKE_POSE
-    private Path pathIntakeForward;     // INTAKE_POSE → INTAKE_FORWARD_POSE (slow sweep)
-    private Path pathToLaunch;          // INTAKE_FORWARD_POSE → START_POSE
-    private Path pathToPark;            // START_POSE → PARK_POSE
+    private Path pathToIntake;              // START_POSE → INTAKE_POSE
+    private PathChain pathIntakeForward;    // INTAKE_POSE → INTAKE_FORWARD_POSE (slow sweep - PathChain for setMaxPower)
+    private Path pathToLaunch;              // INTAKE_FORWARD_POSE → START_POSE
+    private Path pathToPark;                // START_POSE → PARK_POSE
     
     // ========== LIFECYCLE METHODS ==========
     
@@ -229,11 +228,17 @@ public class Auto_BlueFar_TEST extends OpMode {
         } else {
             telemetry.addData("Limelight", "Not connected");
         }
-        telemetry.addData("Initial Turret", "%.1f°", INITIAL_TURRET_ANGLE);
+        telemetry.addData("Initial Turret Offset", "%.1f° (AIM HERE before START)", INITIAL_TURRET_ANGLE);
+        if (robot.autoTurret != null) {
+            telemetry.addData("Turret Encoder", "%d ticks", 
+                robot.motors != null && robot.motors.turret != null ? 
+                robot.motors.turret.getCurrentPosition() : 0);
+        }
         telemetry.addData("Shooter Velocity", "%.0f", SHOOTER_VELOCITY);
         
         telemetry.addLine();
-        telemetry.addLine(">>> Press START to begin <<<");
+        telemetry.addLine("*** MANUAL AIM: Point turret at goal ***");
+        telemetry.addLine(">>> Then press START to begin <<<");
         telemetry.update();
     }
     
@@ -286,6 +291,16 @@ public class Auto_BlueFar_TEST extends OpMode {
     @Override
     public void stop() {
         if (robot != null) {
+            // Save turret offset for TeleOp (Auto → TeleOp persistence)
+            if (robot.autoTurret != null) {
+                RobotMotors.saveTurretOffset(
+                    robot.autoTurret.getManualOffsetTicks(),
+                    robot.autoTurret.getInitialOffsetDegrees()
+                );
+            }
+            if (robot.motors != null) {
+                robot.motors.saveTurretPosition();
+            }
             robot.stopAll();
         }
     }
@@ -298,9 +313,11 @@ public class Auto_BlueFar_TEST extends OpMode {
         pathToIntake.setLinearHeadingInterpolation(START_POSE.getHeading(), INTAKE_POSE.getHeading());
         
         // Step 5: Forward sweep to pick up balls (INTAKE_POSE → X=10)
-        // Heading stays constant at 180° throughout the sweep
-        pathIntakeForward = new Path(new BezierLine(INTAKE_POSE, INTAKE_FORWARD_POSE));
-        pathIntakeForward.setConstantHeadingInterpolation(INTAKE_POSE.getHeading());
+        // Built as PathChain (same pattern as old Auto_Blue_Far where setMaxPower worked)
+        pathIntakeForward = follower.pathBuilder()
+                .addPath(new BezierLine(INTAKE_POSE, INTAKE_FORWARD_POSE))
+                .setConstantHeadingInterpolation(INTAKE_POSE.getHeading())
+                .build();
         
         // Step 6: Return from intake area back to launch position
         pathToLaunch = new Path(new BezierLine(INTAKE_FORWARD_POSE, START_POSE));
@@ -318,33 +335,39 @@ public class Auto_BlueFar_TEST extends OpMode {
         
         switch (currentState) {
             
-            // ==================== PHASE 1: INIT TURRET ====================
+            // ==================== PHASE 1: INIT TURRET (Offset-based) ====================
+            // User manually aimed turret before init. Encoder was reset to 0.
+            // Turret stays exactly where user aimed — NO motor movement.
+            // Auto-tracking is NOT enabled yet (robot is stationary, manual aim is perfect).
+            // Auto-tracking activates later when robot starts driving to intake.
             
             case INIT:
-                robot.autoTurret.moveToAngle(INITIAL_TURRET_ANGLE);
-                transitionTo(AutoState.MOVE_TURRET_INITIAL);
-                break;
+                // Store the initial offset for later use
+                robot.autoTurret.setInitialOffset(INITIAL_TURRET_ANGLE);
                 
-            case MOVE_TURRET_INITIAL:
-                if (robot.autoTurret.isAtTargetPosition() || 
-                    elapsed > RobotConstants.Auto.INITIAL_TURRET_MOVE_TIMEOUT) {
-                    robot.autoTurret.resumeFromReset();
-                    robot.autoTurret.enableCombinedGoalTracking();
-                    transitionTo(AutoState.WAIT_TURRET_INITIAL);
-                }
-                break;
+                // Hold turret at current position using PID (prevents drift during driving)
+                // This keeps the turret locked at encoder 0 (= user's manual aim)
+                robot.autoTurret.holdCurrentPosition();
                 
-            case WAIT_TURRET_INITIAL:
-                if (elapsed > RobotConstants.Auto.TURRET_SETTLING_TIME) {
-                    // Check if we should stop after this phase
-                    if (stopAfterPhase == TestPhase.INIT_TURRET) {
-                        currentState = AutoState.PHASE_COMPLETE;
-                    } else {
-                        transitionTo(AutoState.WAIT_SHOOTER_READY_1);
-                    }
+                // Check if we should stop after this phase
+                if (stopAfterPhase == TestPhase.INIT_TURRET) {
+                    currentState = AutoState.PHASE_COMPLETE;
+                } else {
+                    // Skip Limelight calibration — user's manual aim is trusted.
+                    // Go straight to first shooting phase.
+                    transitionTo(AutoState.WAIT_SHOOTER_READY_1);
                 }
                 break;
             
+            // ==================== LIMELIGHT CALIBRATION (ONE-TIME) ====================
+            // Reserved for future use. Currently skipped — manual aim is used for first shot.
+            // Auto-tracking + Limelight correction activates when robot starts moving.
+                
+            case LIMELIGHT_CALIBRATE:
+                // Currently unused — transition straight through
+                transitionTo(AutoState.WAIT_SHOOTER_READY_1);
+                break;
+                
             // ==================== PHASE 2: FIRST SHOOTING ====================
                 
             case WAIT_SHOOTER_READY_1:
@@ -386,6 +409,9 @@ public class Auto_BlueFar_TEST extends OpMode {
             // ==================== PHASE 3: DRIVE TO INTAKE ZONE ====================
                 
             case DRIVE_TO_INTAKE:
+                // Turret stays at manual aim — no auto-tracking during auto.
+                // Robot returns to same launch position, so angle stays the same.
+                
                 // Switch to intake mode and start intake motor while driving
                 if (robot.autoIntake != null) {
                     robot.autoIntake.setIntakeMode();
@@ -416,11 +442,16 @@ public class Auto_BlueFar_TEST extends OpMode {
                 
             case INTAKE_FORWARD:
                 // Intake motor should already be running from DRIVE_TO_INTAKE
+                // SLOW DOWN: setMaxPower BEFORE followPath (same pattern as old Auto_Blue_Far)
+                follower.setMaxPower(RobotConstants.Auto.INTAKE_FORWARD_SPEED);
                 follower.followPath(pathIntakeForward);
                 transitionTo(AutoState.WAIT_INTAKE_COMPLETE);
                 break;
                 
             case WAIT_INTAKE_COMPLETE:
+                // ENFORCE slow speed every loop - follower.update() may reset it
+                follower.setMaxPower(RobotConstants.Auto.INTAKE_FORWARD_SPEED);
+                
                 // Check if we've collected all 3 balls
                 boolean ballsFull = (robot.autoIntake != null && 
                     robot.autoIntake.getBallsLoaded() >= RobotConstants.Auto.BALLS_PER_CYCLE);
@@ -428,6 +459,8 @@ public class Auto_BlueFar_TEST extends OpMode {
                 boolean timedOut = elapsed > RobotConstants.Auto.INTAKE_FORWARD_TIMEOUT;
                 
                 if (ballsFull || pathDone || timedOut) {
+                    // Restore full speed for next path
+                    follower.setMaxPower(1.0);
                     // Stop intake and switch to launch mode
                     if (robot.autoIntake != null) {
                         robot.autoIntake.stopIntakeMotor();
@@ -595,6 +628,18 @@ public class Auto_BlueFar_TEST extends OpMode {
                 robot.autoTurret.isAnyModeEnabled() ? "(AUTO)" : "(OFF)");
         }
         
+        // Limelight aim assist
+        if (robot.limelight != null && robot.limelight.isConnected()) {
+            if (robot.limelight.hasAllianceTarget()) {
+                double tx = robot.limelight.getTargetX();
+                telemetry.addData("Limelight Aim", "tx=%.1f° %s", tx,
+                    Math.abs(tx) < RobotConstants.Auto.LIMELIGHT_ON_TARGET_DEGREES ? 
+                    "✓ LOCKED" : "correcting");
+            } else {
+                telemetry.addData("Limelight Aim", "No tag visible");
+            }
+        }
+        
         // Shooter
         telemetry.addData("Shooter", "%.0f / %.0f %s",
             robot.shooting.getCurrentVelocity(),
@@ -620,13 +665,6 @@ public class Auto_BlueFar_TEST extends OpMode {
         
         // Path status
         telemetry.addData("Path", follower.isBusy() ? "MOVING" : "IDLE");
-        
-        // Limelight
-        if (robot.limelight != null && robot.limelight.isConnected()) {
-            telemetry.addData("Limelight", robot.limelight.hasAllianceTarget() ? 
-                "Tag visible (tx: " + String.format("%.1f", robot.limelight.getTargetX()) + "°)" : 
-                "No tag");
-        }
         
         telemetry.update();
     }

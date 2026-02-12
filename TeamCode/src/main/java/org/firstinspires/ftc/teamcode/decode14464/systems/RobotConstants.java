@@ -94,7 +94,7 @@ public class RobotConstants {
         public static final double DEFAULT_POSITION = 0.50; // Default when no tag visible
 
         // Preset positions for manual control
-        public static final double LONG_RANGE_POSITION = 0.30;   // Flattest angle
+        public static final double LONG_RANGE_POSITION = 0.27;   // Flattest angle (max range)
         public static final double MID_RANGE_POSITION = 0.55;    // Mid-range
         public static final double SHORT_RANGE_POSITION = 0.80;  // Steepest angle
 
@@ -189,7 +189,7 @@ public class RobotConstants {
         public static final String BALL_COLOR_GREEN = "Green";
 
         // Auto-advance settings
-        public static final long COLOR_DEBOUNCE_MS = 100; // Debounce time
+        public static final long COLOR_DEBOUNCE_MS = 300; // Debounce time - must be long enough for servo to advance between balls
     }
 
     // ==================== AUTO SHOOTING CONSTANTS ====================
@@ -221,12 +221,14 @@ public class RobotConstants {
         public static final double SHOOTER_SPINUP_SECONDS = 1.0;    // Flywheel starts in start(), has head start
         public static final double TURRET_AIM_TIMEOUT = 1.5;        // Max time to wait for turret to aim
         
-        // Shooting sequence (3 balls @ ~300ms interval + push = ~1.5s actual)
-        public static final double SHOOT_SEQUENCE_TIMEOUT = 3.0;    // Max time for 3-ball sequence
+        // Shooting sequence: 3 balls @ (300ms position + 300ms push + 500ms retract) + 300ms initial = ~3.6s
+        public static final double SHOOT_SEQUENCE_TIMEOUT = 5.0;    // Max time for 3-ball sequence
         
         // Intake timing
         public static final double INTAKE_DURATION = 3.0;           // Time to intake balls (legacy)
         public static final double INTAKE_FORWARD_TIMEOUT = 4.0;    // Max time for intake forward sweep (~26")
+        public static final double INTAKE_FORWARD_SPEED = 0.3;      // Slow speed during intake sweep (0.0-1.0)
+                                                                     // Must be slow enough for turret servo to advance between balls
         
         // Path timing
         public static final double PATH_TIMEOUT = 3.5;              // Max time for drive paths (~30-50")
@@ -239,7 +241,7 @@ public class RobotConstants {
         // Turret angle to move to at start of autonomous (degrees from center)
         // Positive = right, Negative = left
         // TUNE THIS: Adjust until first shot hits the goal reliably
-        public static final double BLUE_FAR_INITIAL_TURRET_ANGLE = 45.0;   // Blue far zone
+        public static final double BLUE_FAR_INITIAL_TURRET_ANGLE = 42.0;   // Blue far zone (reduced from 45)
         public static final double RED_FAR_INITIAL_TURRET_ANGLE = -45.0;   // Red far zone (mirror)
         public static final double BLUE_NEAR_INITIAL_TURRET_ANGLE = 30.0;  // Blue near zone
         public static final double RED_NEAR_INITIAL_TURRET_ANGLE = -30.0;  // Red near zone (mirror)
@@ -249,6 +251,10 @@ public class RobotConstants {
         
         // Settling time after turret reaches position before enabling auto-tracking
         public static final double TURRET_SETTLING_TIME = 0.2;             // seconds (200ms)
+        
+        // Limelight calibration - fine-tune turret with AprilTag before shooting
+        public static final double LIMELIGHT_CALIBRATE_TIMEOUT = 0.8;      // Max wait for tag visibility
+        public static final double LIMELIGHT_ON_TARGET_DEGREES = 2.0;      // tx < this = good enough to shoot
     }
 }
 

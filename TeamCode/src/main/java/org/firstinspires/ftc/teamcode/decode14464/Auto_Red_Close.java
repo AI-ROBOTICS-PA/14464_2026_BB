@@ -16,7 +16,8 @@ import org.firstinspires.ftc.teamcode.decode14464.systems.RobotServos;
 import org.firstinspires.ftc.teamcode.decode14464.systems.RobotSensors;
 
 
-@Autonomous(name = "Auto Red Close", group = "DECODE Auto")
+//// DISABLED: Old version — use auto/Auto_RedNear.java instead
+// @Autonomous(name = "Auto Red Close", group = "DECODE Auto")
 public class Auto_Red_Close extends OpMode {
 
     // Hardware and systems
