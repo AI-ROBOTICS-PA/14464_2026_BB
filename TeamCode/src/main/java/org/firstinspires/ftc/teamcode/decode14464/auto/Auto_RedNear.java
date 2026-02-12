@@ -105,7 +105,7 @@ public class Auto_RedNear extends OpMode {
     private static final Pose START_POSE = new Pose(129, 120, Math.toRadians(0));
     
     // Steps 1/6/11: Launch position - where we shoot from
-    private static final Pose LAUNCH_POSE = new Pose(94, 74, Math.toRadians(0));
+    private static final Pose LAUNCH_POSE = new Pose(94, 84, Math.toRadians(0));
     
     // Step 3: First intake zone (same Y as launch, shifted right toward balls)
     private static final Pose INTAKE_POSE_1 = new Pose(108, 84, Math.toRadians(0));
@@ -120,7 +120,7 @@ public class Auto_RedNear extends OpMode {
     private static final Pose INTAKE_FORWARD_POSE_2 = new Pose(134, 60, Math.toRadians(0));
     
     // Step 13: Park position
-    private static final Pose PARK_POSE = new Pose(72, 96, Math.toRadians(0));
+    private static final Pose PARK_POSE = new Pose(108, 84, Math.toRadians(0));
     
     // ========== SHOOTING PARAMETERS ==========
     // Near zone = shorter distance = LOW velocity + SHORT RANGE hood

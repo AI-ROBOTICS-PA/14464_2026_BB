@@ -361,15 +361,14 @@ public class Auto_RedFar_TEST extends OpMode {
             case WAIT_SHOOTER_READY_1:
                 if (robot.shooting.isShooterAtTargetVelocity() || 
                     elapsed > RobotConstants.Auto.SHOOTER_SPINUP_SECONDS) {
-                    transitionTo(AutoState.WAIT_TURRET_AIM_1);
+                    // Skip turret aim — turret holds position, no aiming needed
+                    transitionTo(AutoState.SHOOT_SEQUENCE_1);
                 }
                 break;
                 
             case WAIT_TURRET_AIM_1:
-                if (robot.autoTurret.isOnTarget() || 
-                    elapsed > RobotConstants.Auto.TURRET_AIM_TIMEOUT) {
-                    transitionTo(AutoState.SHOOT_SEQUENCE_1);
-                }
+                // SKIPPED: turret aim not needed (heading & turret don't change)
+                transitionTo(AutoState.SHOOT_SEQUENCE_1);
                 break;
                 
             case SHOOT_SEQUENCE_1:
@@ -469,7 +468,8 @@ public class Auto_RedFar_TEST extends OpMode {
                     if (stopAfterPhase == TestPhase.DRIVE_LAUNCH) {
                         currentState = AutoState.PHASE_COMPLETE;
                     } else {
-                        transitionTo(AutoState.WAIT_TURRET_AIM_2);
+                        // Skip turret aim — turret holds position, no aiming needed
+                        transitionTo(AutoState.SHOOT_SEQUENCE_2);
                     }
                 }
                 break;
@@ -477,10 +477,8 @@ public class Auto_RedFar_TEST extends OpMode {
             // ==================== PHASE 6: SECOND SHOOTING ====================
                 
             case WAIT_TURRET_AIM_2:
-                if (robot.autoTurret.isOnTarget() || 
-                    elapsed > RobotConstants.Auto.TURRET_AIM_TIMEOUT) {
-                    transitionTo(AutoState.SHOOT_SEQUENCE_2);
-                }
+                // SKIPPED: turret aim not needed (heading & turret don't change)
+                transitionTo(AutoState.SHOOT_SEQUENCE_2);
                 break;
                 
             case SHOOT_SEQUENCE_2:

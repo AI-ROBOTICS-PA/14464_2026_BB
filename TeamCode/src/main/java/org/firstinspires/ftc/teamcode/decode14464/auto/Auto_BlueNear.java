@@ -118,7 +118,7 @@ public class Auto_BlueNear extends OpMode {
     private static final Pose INTAKE_FORWARD_POSE_2 = new Pose(10, 60, Math.toRadians(180));
     
     // Step 13: Park position
-    private static final Pose PARK_POSE = new Pose(72, 96, Math.toRadians(180));
+    private static final Pose PARK_POSE = new Pose(36, 84, Math.toRadians(180));
     
     // ========== SHOOTING PARAMETERS ==========
     // Near zone = medium distance = 1160 velocity + SHORT RANGE hood
