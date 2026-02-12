@@ -121,8 +121,8 @@ public class Auto_BlueNear extends OpMode {
     private static final Pose PARK_POSE = new Pose(72, 96, Math.toRadians(180));
     
     // ========== SHOOTING PARAMETERS ==========
-    // Near zone = shorter distance = LOW velocity + SHORT RANGE hood
-    private static final double SHOOTER_VELOCITY = RobotConstants.Shooter.LOW_VELOCITY;
+    // Near zone = medium distance = 1160 velocity + SHORT RANGE hood
+    private static final double SHOOTER_VELOCITY = 1160.0;
     private static final double HOOD_POSITION = RobotConstants.Hood.SHORT_RANGE_POSITION;
     private static final LimelightManager.Alliance ALLIANCE = LimelightManager.Alliance.BLUE;
     private static final double INITIAL_TURRET_ANGLE = RobotConstants.Auto.BLUE_NEAR_INITIAL_TURRET_ANGLE;
