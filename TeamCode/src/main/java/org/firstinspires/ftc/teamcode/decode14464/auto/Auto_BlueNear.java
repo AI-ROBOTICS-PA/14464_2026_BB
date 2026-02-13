@@ -132,7 +132,7 @@ public class Auto_BlueNear extends OpMode {
     private static final double SHOOTER_SPINUP_TIMEOUT = 0.5;    // Flywheel spins up during drive to launch
     private static final double TURRET_AIM_TIMEOUT = 1.0;        // Reduced from 1.5s
     private static final double SHOOT_TIMEOUT = 4.0;             // Reduced from 5.0s
-    private static final double INTAKE_SWEEP_TIMEOUT = 3.0;      // Reduced from 4.0s
+    private static final double INTAKE_SWEEP_TIMEOUT = 3.5;      // Increased for slower sweep speed
     private static final double DRIVE_TIMEOUT = 3.0;             // Reduced from 3.5s
     private static final double PARK_TIMEOUT = 2.5;              // Reduced from 3.0s
     

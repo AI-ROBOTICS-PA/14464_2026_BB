@@ -227,7 +227,7 @@ public class RobotConstants {
         // Intake timing
         public static final double INTAKE_DURATION = 3.0;           // Time to intake balls (legacy)
         public static final double INTAKE_FORWARD_TIMEOUT = 4.0;    // Max time for intake forward sweep (~26")
-        public static final double INTAKE_FORWARD_SPEED = 0.3;      // Slow speed during intake sweep (0.0-1.0)
+        public static final double INTAKE_FORWARD_SPEED = 0.25;     // Slow speed during intake sweep (reduced from 0.3 to give servo time between balls)
                                                                      // Must be slow enough for turret servo to advance between balls
         
         // Path timing
