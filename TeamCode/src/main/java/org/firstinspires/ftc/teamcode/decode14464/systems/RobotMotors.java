@@ -143,7 +143,6 @@ public class RobotMotors {
             flywheelMotor.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER, pidfCoefficients);
         }
     }
-
     /**
      * Start shooter at constant velocity (maintains speed during launches)
      * @param curTargetVelocity Target velocity (e.g., 1400-1600 for typical shooter)

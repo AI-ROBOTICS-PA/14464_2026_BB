@@ -122,7 +122,7 @@ public class Auto_BlueNear extends OpMode {
     
     // ========== SHOOTING PARAMETERS ==========
     // Near zone = medium distance = 1160 velocity + SHORT RANGE hood
-    private static final double SHOOTER_VELOCITY = 1160.0;
+    private static final double SHOOTER_VELOCITY = 1140.0;
     private static final double HOOD_POSITION = RobotConstants.Hood.SHORT_RANGE_POSITION;
     private static final LimelightManager.Alliance ALLIANCE = LimelightManager.Alliance.BLUE;
     private static final double INITIAL_TURRET_ANGLE = RobotConstants.Auto.BLUE_NEAR_INITIAL_TURRET_ANGLE;
@@ -421,9 +421,15 @@ public class Auto_BlueNear extends OpMode {
             // ==================== PHASE 1: INIT + DRIVE TO LAUNCH ====================
             
             case INIT:
-                // Store turret offset and hold position (same as Blue Far)
+                // Store turret offset for tracking calculations
                 robot.autoTurret.setInitialOffset(INITIAL_TURRET_ANGLE);
-                robot.autoTurret.holdCurrentPosition();
+                
+                // Lock turret motor at encoder position 0 using hardware RUN_TO_POSITION.
+                // This uses the motor controller's internal PID (~1000Hz) which holds
+                // rock-solid against flywheel vibration, unlike our software PID (~50Hz)
+                // which oscillates ("calibrating" motion) from encoder jitter.
+                robot.autoTurret.moveToAngle(0);
+                
                 transitionTo(AutoState.DRIVE_TO_LAUNCH_0);
                 break;
                 

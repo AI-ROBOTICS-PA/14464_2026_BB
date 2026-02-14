@@ -307,6 +307,16 @@ public class DecodeTeleOp extends OpMode {
             }
         }
 
+        // CRITICAL: Update localization BEFORE enabling goal tracking.
+        // initTeleOp() creates a fresh follower that starts at default pose (0, 0, 0°).
+        // Without this update, recalibratePosition() uses the WRONG heading (0° instead
+        // of the actual IMU heading like 180°). Then when the first loop() updates the
+        // heading from IMU, the offset is mismatched and the turret swings to center.
+        // This update reads the IMU so heading is correct before calibration.
+        if (robot.localization != null) {
+            robot.localization.update();
+        }
+
         // Enable goal tracking (always - position is known from Auto or from default)
         if (robot.autoTurret != null) {
             robot.autoTurret.enableCombinedGoalTracking();
@@ -318,6 +328,12 @@ public class DecodeTeleOp extends OpMode {
                     RobotMotors.getSavedInitialOffsetDegrees()
                 );
             }
+            
+            // Recalibrate so the turret doesn't jump on the first loop.
+            // With localization.update() above, the IMU heading is now correct.
+            // Recalibrate tells the system "current turret position is correct"
+            // and adjusts the offset so tracking starts smoothly from here.
+            robot.autoTurret.recalibratePosition();
         }
 
         String allianceStr = isRed ? "RED" : "BLUE";
