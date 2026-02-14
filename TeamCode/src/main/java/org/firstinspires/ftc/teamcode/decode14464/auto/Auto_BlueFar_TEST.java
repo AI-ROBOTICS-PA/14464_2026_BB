@@ -371,9 +371,11 @@ public class Auto_BlueFar_TEST extends OpMode {
             // ==================== PHASE 2: FIRST SHOOTING ====================
                 
             case WAIT_SHOOTER_READY_1:
-                if (robot.shooting.isShooterAtTargetVelocity() || 
-                    elapsed > RobotConstants.Auto.SHOOTER_SPINUP_SECONDS) {
-                    // Skip turret aim — turret holds position, no aiming needed
+                // Flywheel started once in start() — just wait for stable velocity
+                if (robot.shooting.isShooterAtTargetVelocity()) {
+                    transitionTo(AutoState.SHOOT_SEQUENCE_1);
+                } else if (elapsed > RobotConstants.Auto.SHOOTER_SPINUP_SECONDS) {
+                    // Safety timeout — flywheel should be stable by now, proceed
                     transitionTo(AutoState.SHOOT_SEQUENCE_1);
                 }
                 break;
@@ -488,8 +490,8 @@ public class Auto_BlueFar_TEST extends OpMode {
                     if (stopAfterPhase == TestPhase.DRIVE_LAUNCH) {
                         currentState = AutoState.PHASE_COMPLETE;
                     } else {
-                        // Skip turret aim — turret holds position, no aiming needed
-                        transitionTo(AutoState.SHOOT_SEQUENCE_2);
+                        // Re-check velocity before second shoot
+                        transitionTo(AutoState.WAIT_TURRET_AIM_2);
                     }
                 }
                 break;
@@ -497,8 +499,13 @@ public class Auto_BlueFar_TEST extends OpMode {
             // ==================== PHASE 6: SECOND SHOOTING ====================
                 
             case WAIT_TURRET_AIM_2:
-                // SKIPPED: turret aim not needed (heading & turret don't change)
-                transitionTo(AutoState.SHOOT_SEQUENCE_2);
+                // Flywheel has been running since start() — just verify velocity is stable
+                if (robot.shooting.isShooterAtTargetVelocity()) {
+                    transitionTo(AutoState.SHOOT_SEQUENCE_2);
+                } else if (elapsed > 0.5) {
+                    // Safety timeout — flywheel has been running for many seconds, proceed
+                    transitionTo(AutoState.SHOOT_SEQUENCE_2);
+                }
                 break;
                 
             case SHOOT_SEQUENCE_2:

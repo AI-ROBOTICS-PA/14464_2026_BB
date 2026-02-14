@@ -447,10 +447,11 @@ public class Auto_RedNear extends OpMode {
             // ==================== PHASE 2: FIRST SHOOT (preloaded 3 balls) ====================
                 
             case WAIT_SHOOTER_READY:
-                // Flywheel started in start(), should be up to speed by now
-                if (robot.shooting.isShooterAtTargetVelocity() || 
-                    elapsed > SHOOTER_SPINUP_TIMEOUT) {
-                    // Skip turret aim — heading is constant 0° and turret holds position
+                // Flywheel started once in start() — just wait for stable velocity
+                if (robot.shooting.isShooterAtTargetVelocity()) {
+                    transitionTo(AutoState.SHOOT_SEQUENCE_1);
+                } else if (elapsed > SHOOTER_SPINUP_TIMEOUT) {
+                    // Safety timeout — flywheel should be stable by now, proceed
                     transitionTo(AutoState.SHOOT_SEQUENCE_1);
                 }
                 break;
@@ -560,8 +561,8 @@ public class Auto_RedNear extends OpMode {
                     if (stopAfterPhase == TestPhase.DRIVE_LAUNCH_1) {
                         currentState = AutoState.PHASE_COMPLETE;
                     } else {
-                        // Skip turret aim — go straight to shoot
-                        transitionTo(AutoState.SHOOT_SEQUENCE_2);
+                        // Re-check velocity before second shoot
+                        transitionTo(AutoState.WAIT_TURRET_AIM_2);
                     }
                 }
                 break;
@@ -569,8 +570,13 @@ public class Auto_RedNear extends OpMode {
             // ==================== PHASE 6: SECOND SHOOT ====================
                 
             case WAIT_TURRET_AIM_2:
-                // SKIPPED: turret aim not needed (heading & turret don't change)
-                transitionTo(AutoState.SHOOT_SEQUENCE_2);
+                // Flywheel has been running since start() — just verify velocity is stable
+                if (robot.shooting.isShooterAtTargetVelocity()) {
+                    transitionTo(AutoState.SHOOT_SEQUENCE_2);
+                } else if (elapsed > 0.5) {
+                    // Safety timeout — flywheel has been running for many seconds, proceed
+                    transitionTo(AutoState.SHOOT_SEQUENCE_2);
+                }
                 break;
                 
             case SHOOT_SEQUENCE_2:
@@ -673,8 +679,8 @@ public class Auto_RedNear extends OpMode {
                     if (stopAfterPhase == TestPhase.DRIVE_LAUNCH_2) {
                         currentState = AutoState.PHASE_COMPLETE;
                     } else {
-                        // Skip turret aim — go straight to shoot
-                        transitionTo(AutoState.SHOOT_SEQUENCE_3);
+                        // Re-check velocity before third shoot
+                        transitionTo(AutoState.WAIT_TURRET_AIM_3);
                     }
                 }
                 break;
@@ -682,8 +688,13 @@ public class Auto_RedNear extends OpMode {
             // ==================== PHASE 10: THIRD SHOOT ====================
                 
             case WAIT_TURRET_AIM_3:
-                // SKIPPED: turret aim not needed (heading & turret don't change)
-                transitionTo(AutoState.SHOOT_SEQUENCE_3);
+                // Flywheel has been running since start() — just verify velocity is stable
+                if (robot.shooting.isShooterAtTargetVelocity()) {
+                    transitionTo(AutoState.SHOOT_SEQUENCE_3);
+                } else if (elapsed > 0.5) {
+                    // Safety timeout — flywheel has been running for many seconds, proceed
+                    transitionTo(AutoState.SHOOT_SEQUENCE_3);
+                }
                 break;
                 
             case SHOOT_SEQUENCE_3:

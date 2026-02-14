@@ -6,7 +6,7 @@ import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.PIDFCoefficients;
 
-// @TeleOp(name = "Flywheel Tuner", group = "Tuning")  // DISABLED
+@TeleOp(name = "Flywheel Tuner", group = "Tuning")
 public class FlywheelTuner extends OpMode {
     // Motor
     private DcMotorEx flywheelMotor;
@@ -17,8 +17,8 @@ public class FlywheelTuner extends OpMode {
     public double curTargetVelocity = highVelocity;
 
     // PIDF values (we're only tuning P and F, I and D stay at 0)
-    private double p = 300.0;
-    private double f = 13.65;
+    private double p = 0.0;
+    private double f = 0.0;
 
     // Step sizes for fine and coarse tuning
     private final double[] stepSizes = {10.0, 1.0, 0.1, 0.01, 0.001};
@@ -38,8 +38,8 @@ public class FlywheelTuner extends OpMode {
         flywheelMotor = hardwareMap.get(DcMotorEx.class, "shooter");
         flywheelMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
         flywheelMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-        flywheelMotor.setDirection(DcMotor.Direction.FORWARD); // Change to REVERSE if needed
-        flywheelMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        flywheelMotor.setDirection(DcMotor.Direction.FORWARD);  // Confirmed: FORWARD gives positive encoder
+        flywheelMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
 
         // Set initial PIDF coefficients (P, I, D, F)
         PIDFCoefficients pidfCoefficients = new PIDFCoefficients(p, 0, 0, f);
@@ -49,7 +49,7 @@ public class FlywheelTuner extends OpMode {
         telemetry.addLine("  FLYWHEEL TUNER INITIALIZED");
         telemetry.addLine("=================================");
         telemetry.addLine("Controls:");
-        telemetry.addLine("  Y - Toggle velocity (900/1500)");
+        telemetry.addLine("  Y - Toggle velocity (1450/1100)");
         telemetry.addLine("  B - Change step size");
         telemetry.addLine("  D-Pad Up/Down - Adjust P");
         telemetry.addLine("  D-Pad Right/Left - Adjust F");
@@ -69,8 +69,6 @@ public class FlywheelTuner extends OpMode {
         }
         prevY = gamepad1.y;
 
-
-
         // Cycle through step sizes with B button
         if (gamepad1.b && !prevB) {
             stepIndex = (stepIndex + 1) % stepSizes.length;
@@ -82,7 +80,7 @@ public class FlywheelTuner extends OpMode {
             p += stepSizes[stepIndex];
         }
         if (gamepad1.dpad_down && !prevDpadDown) {
-            p = Math.max(0, p - stepSizes[stepIndex]); // Don't go below 0
+            p = Math.max(0, p - stepSizes[stepIndex]);
         }
         prevDpadUp = gamepad1.dpad_up;
         prevDpadDown = gamepad1.dpad_down;
@@ -92,7 +90,7 @@ public class FlywheelTuner extends OpMode {
             f += stepSizes[stepIndex];
         }
         if (gamepad1.dpad_left && !prevDpadLeft) {
-            f = Math.max(0, f - stepSizes[stepIndex]); // Don't go below 0
+            f = Math.max(0, f - stepSizes[stepIndex]);
         }
         prevDpadRight = gamepad1.dpad_right;
         prevDpadLeft = gamepad1.dpad_left;
@@ -110,7 +108,7 @@ public class FlywheelTuner extends OpMode {
 
         // Update telemetry with all tuning data
         telemetry.addLine("=================================");
-        telemetry.addLine("  FLYWHEEL TUNER");
+        telemetry.addLine("  FLYWHEEL TUNER (ENCODER)");
         telemetry.addLine("=================================");
         telemetry.addData("Target Velocity", "%.1f ticks/sec", curTargetVelocity);
         telemetry.addData("Current Velocity", "%.1f ticks/sec", currentVelocity);
@@ -137,4 +135,3 @@ public class FlywheelTuner extends OpMode {
         }
     }
 }
-
