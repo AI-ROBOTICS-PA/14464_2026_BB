@@ -345,11 +345,12 @@ public class Auto_BlueFar_TEST extends OpMode {
                 // Store the initial offset for later use
                 robot.autoTurret.setInitialOffset(INITIAL_TURRET_ANGLE);
                 
-                // Do NOT call holdCurrentPosition() here.
-                // The flywheel vibration causes encoder jitter beyond POSITION_TOLERANCE,
-                // which makes the PID oscillate back and forth ("calibrating" motion).
-                // BRAKE mode alone holds the turret steady while the robot is stationary.
-                // PID hold will be enabled later when the robot starts driving (if needed).
+                // Lock turret motor at encoder position 0 using hardware RUN_TO_POSITION.
+                // This uses the motor controller's internal PID (~1000Hz) which holds
+                // rock-solid against flywheel vibration, unlike our software PID (~50Hz)
+                // which oscillates ("calibrating" motion) from encoder jitter.
+                // The turret stays locked at 0 (= user's manual aim) for the entire auto.
+                robot.autoTurret.moveToAngle(0);
                 
                 // Check if we should stop after this phase
                 if (stopAfterPhase == TestPhase.INIT_TURRET) {
