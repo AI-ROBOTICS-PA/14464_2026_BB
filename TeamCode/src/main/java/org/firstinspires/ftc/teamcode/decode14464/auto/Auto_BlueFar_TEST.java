@@ -345,9 +345,11 @@ public class Auto_BlueFar_TEST extends OpMode {
                 // Store the initial offset for later use
                 robot.autoTurret.setInitialOffset(INITIAL_TURRET_ANGLE);
                 
-                // Hold turret at current position using PID (prevents drift during driving)
-                // This keeps the turret locked at encoder 0 (= user's manual aim)
-                robot.autoTurret.holdCurrentPosition();
+                // Do NOT call holdCurrentPosition() here.
+                // The flywheel vibration causes encoder jitter beyond POSITION_TOLERANCE,
+                // which makes the PID oscillate back and forth ("calibrating" motion).
+                // BRAKE mode alone holds the turret steady while the robot is stationary.
+                // PID hold will be enabled later when the robot starts driving (if needed).
                 
                 // Check if we should stop after this phase
                 if (stopAfterPhase == TestPhase.INIT_TURRET) {
@@ -374,10 +376,12 @@ public class Auto_BlueFar_TEST extends OpMode {
                 // Flywheel started once in start() — just wait for stable velocity
                 if (robot.shooting.isShooterAtTargetVelocity()) {
                     transitionTo(AutoState.SHOOT_SEQUENCE_1);
-                } else if (elapsed > RobotConstants.Auto.SHOOTER_SPINUP_SECONDS) {
-                    // Safety timeout — flywheel should be stable by now, proceed
+                } else if (elapsed > RobotConstants.Auto.SHOOTER_SPINUP_SECONDS
+                           && robot.shooting.getCurrentVelocity() >= SHOOTER_VELOCITY * 0.90) {
+                    // Safety timeout — only proceed if velocity is at least 90% of target
                     transitionTo(AutoState.SHOOT_SEQUENCE_1);
                 }
+                // If velocity is below 90% after timeout, keep waiting (flywheel may need more time)
                 break;
                 
             case WAIT_TURRET_AIM_1:

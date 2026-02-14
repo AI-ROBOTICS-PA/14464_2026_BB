@@ -218,7 +218,7 @@ public class RobotConstants {
     // Worst-case total: ~25s (5s buffer)
     public static final class Auto {
         // Shooter/turret timing
-        public static final double SHOOTER_SPINUP_SECONDS = 1.0;    // Flywheel starts in start(), has head start
+        public static final double SHOOTER_SPINUP_SECONDS = 3.0;    // Flywheel starts in start(); must reach target velocity before shooting
         public static final double TURRET_AIM_TIMEOUT = 1.5;        // Max time to wait for turret to aim
         
         // Shooting sequence: 3 balls @ (300ms position + 300ms push + 500ms retract) + 300ms initial = ~3.6s
