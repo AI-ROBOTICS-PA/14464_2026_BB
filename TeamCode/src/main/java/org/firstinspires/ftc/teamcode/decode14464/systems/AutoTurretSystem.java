@@ -658,29 +658,36 @@ public class AutoTurretSystem {
 
     /**
      * Enforce rotation limits with soft limits (slows down near edges)
-     * FIXED: Prevents turret from rotating beyond safe limits
+     * Uses PHYSICAL angle (encoder + initialOffset) so limits are correct
+     * regardless of where the encoder was zeroed during auto init.
+     * (Matches DecodeTeleOp.enforceTurretLimitsForManual approach)
      */
     private double enforceTurretLimits(double currentEncoderPosition, double requestedPower) {
-        // Check if at max limit (hard stop)
-        if (currentEncoderPosition >= MAX_ENCODER_POSITION && requestedPower > 0) {
-            return 0.0; // Stop - can't go further positive
+        // Convert raw encoder to physical degrees (accounts for initial offset)
+        double physicalDegrees = currentEncoderPosition / TICKS_PER_DEGREE + initialOffsetDegrees;
+        double maxRotation = RobotConstants.Turret.MAX_ROTATION_DEGREES;
+        double softLimitDegrees = RobotConstants.Turret.SOFT_LIMIT_DEGREES;
+
+        // Hard limit - stop at +MAX physical rotation
+        if (physicalDegrees >= maxRotation && requestedPower > 0) {
+            return 0.0;
         }
 
-        // Check if at min limit (hard stop)
-        if (currentEncoderPosition <= MIN_ENCODER_POSITION && requestedPower < 0) {
-            return 0.0; // Stop - can't go further negative
+        // Hard limit - stop at -MAX physical rotation
+        if (physicalDegrees <= -maxRotation && requestedPower < 0) {
+            return 0.0;
         }
 
-        // Soft limit - slow down near max
-        if (currentEncoderPosition > (MAX_ENCODER_POSITION - SOFT_LIMIT_ZONE) && requestedPower > 0) {
-            double reduction = (MAX_ENCODER_POSITION - currentEncoderPosition) / SOFT_LIMIT_ZONE;
-            requestedPower *= Math.max(0.1, reduction); // At least 10% power
+        // Soft limit - slow down approaching +MAX
+        if (physicalDegrees > (maxRotation - softLimitDegrees) && requestedPower > 0) {
+            double reduction = (maxRotation - physicalDegrees) / softLimitDegrees;
+            requestedPower *= Math.max(0.1, reduction);
         }
 
-        // Soft limit - slow down near min
-        if (currentEncoderPosition < (MIN_ENCODER_POSITION + SOFT_LIMIT_ZONE) && requestedPower < 0) {
-            double reduction = (currentEncoderPosition - MIN_ENCODER_POSITION) / SOFT_LIMIT_ZONE;
-            requestedPower *= Math.max(0.1, reduction); // At least 10% power
+        // Soft limit - slow down approaching -MAX
+        if (physicalDegrees < (-maxRotation + softLimitDegrees) && requestedPower < 0) {
+            double reduction = (physicalDegrees - (-maxRotation)) / softLimitDegrees;
+            requestedPower *= Math.max(0.1, reduction);
         }
 
         return requestedPower;
