@@ -11,7 +11,7 @@ import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
  *   Cross (X)     - Toggle auto-tracking
  *   Right Stick X - Manual turret control
  */
-// @TeleOp(name = "Turret TeleOp", group = "DECODE")  // DISABLED
+@TeleOp(name = "Turret TeleOp", group = "DECODE")  // DISABLED
 public class TurretTeleOp extends OpMode {
 
     private Turret turret;

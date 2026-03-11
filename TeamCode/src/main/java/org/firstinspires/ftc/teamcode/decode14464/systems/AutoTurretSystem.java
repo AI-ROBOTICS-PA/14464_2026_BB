@@ -232,6 +232,13 @@ public class AutoTurretSystem {
      * Uses unlimited rotation with wire protection
      */
     public void enableCombinedGoalTracking() {
+        // Switch motor back to software-PID mode.
+        // moveToAngle() (used in Auto INIT) leaves the motor in RUN_TO_POSITION,
+        // which causes the hardware controller to ignore setPower() calls and keep
+        // driving to encoder 0. This must be cleared before any software PID runs.
+        if (motors != null && motors.turret != null) {
+            motors.turret.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        }
         combinedGoalTrackingEnabled = true;
         counterRotationEnabled = false;
         enabled = false;

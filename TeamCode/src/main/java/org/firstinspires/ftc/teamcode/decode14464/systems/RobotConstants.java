@@ -64,7 +64,7 @@ public class RobotConstants {
         
         // ========== WIRE MANAGEMENT - MOVEMENT LIMITS ==========
         // Maximum turret rotation from center (CONFIGURABLE for wire safety)
-        public static final double MAX_ROTATION_DEGREES = 135.0;  // ±135° = 270° total range
+        public static final double MAX_ROTATION_DEGREES = 150.0;  // ±135° = 270° total range
         
         // Encoder limits (calculated from MAX_ROTATION_DEGREES)
         public static final int MAX_ENCODER_POSITION = (int)(MAX_ROTATION_DEGREES * TICKS_PER_DEGREE);  // +135° = ~406 ticks
