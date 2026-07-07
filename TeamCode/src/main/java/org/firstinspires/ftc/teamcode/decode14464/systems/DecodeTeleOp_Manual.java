@@ -123,7 +123,7 @@ public class DecodeTeleOp_Manual extends OpMode {
     // ========== TURRET MOTOR CONTROL (Gamepad 2) ==========
     private static final double TURRET_MANUAL_POWER = 0.3; // Manual control power level
     private boolean turretManualOverride = false; // True when GP2 is actively controlling turret
-    private boolean autoTurretEnabled = true; // Toggle with GP2 X - ENABLED by default
+    private boolean autoTurretEnabled = false; // Manual-only mode: keep auto turret disabled
     private boolean prevGP2X = false; // For auto-turret toggle button
     private boolean prevGP2LeftBumper = false; // For recalibrate button detection
     private boolean prevGP2RightBumper = false; // For Limelight calibration button
@@ -176,6 +176,7 @@ public class DecodeTeleOp_Manual extends OpMode {
             } else {
                 robot.autoTurret.setBlueAlliance();
             }
+            robot.autoTurret.disableCombinedGoalTracking();
         }
 
         // Initialize hood servo to starting position
@@ -317,23 +318,9 @@ public class DecodeTeleOp_Manual extends OpMode {
             robot.localization.update();
         }
 
-        // Enable goal tracking (always - position is known from Auto or from default)
+        // Manual-only turret mode: keep goal tracking disabled.
         if (robot.autoTurret != null) {
-            robot.autoTurret.enableCombinedGoalTracking();
-            
-            // Restore turret offset from Auto → TeleOp
-            if (RobotMotors.hasSavedTurretOffset()) {
-                robot.autoTurret.restoreOffset(
-                    RobotMotors.getSavedTurretOffsetTicks(),
-                    RobotMotors.getSavedInitialOffsetDegrees()
-                );
-            }
-            
-            // Recalibrate so the turret doesn't jump on the first loop.
-            // With localization.update() above, the IMU heading is now correct.
-            // Recalibrate tells the system "current turret position is correct"
-            // and adjusts the offset so tracking starts smoothly from here.
-            robot.autoTurret.recalibratePosition();
+            robot.autoTurret.disableCombinedGoalTracking();
         }
 
         String allianceStr = isRed ? "RED" : "BLUE";
@@ -341,7 +328,7 @@ public class DecodeTeleOp_Manual extends OpMode {
         telemetry.addLine("✅ Alliance: " + allianceStr);
         telemetry.addLine("✅ Shooter Running at " + currentShooterVelocity + " (" + velocityModeName + ")");
         telemetry.addLine("✅ Hood at " + HOOD_POSITION_NAMES[currentHoodIndex]);
-        telemetry.addLine("✅ Auto-Turret: GOAL TRACKING (GP2 X to toggle)");
+        telemetry.addLine("✅ Turret: MANUAL CONTROL (GP2 stick/D-pad)");
         if (RobotMotors.hasSavedTurretOffset()) {
             telemetry.addLine("✅ Turret Offset: " + String.format("%.1f°", RobotMotors.getSavedInitialOffsetDegrees()) + " (from Auto)");
         }
@@ -363,13 +350,8 @@ public class DecodeTeleOp_Manual extends OpMode {
         boolean hasManualInput = Math.abs(turretDpadInput) > 0.01 || Math.abs(turretStickInput) > 0.1;
         
         // ========== UPDATE ALL SYSTEMS ==========
-        // If manual turret input is active, SKIP autoTurret.update() completely
-        // This guarantees auto-turret cannot overwrite manual motor power
-        if (hasManualInput || turretManualOverride) {
-            robot.updateAllExceptTurret();
-        } else {
-            robot.updateAll();
-        }
+        // Manual-only turret mode: always skip auto-turret update.
+        robot.updateAllExceptTurret();
 
         // ========== POSITION LOCK (GP2 Left Trigger HOLD) ==========
         // Hold Left Trigger to lock position - resists being pushed by other robots
@@ -411,24 +393,18 @@ public class DecodeTeleOp_Manual extends OpMode {
         // ========== MODE SWITCHING ==========
         // A/Cross: Toggle between Intake and Launch modes
         // Support both controller types: PS4 (cross) and Xbox (a)
-        // BLOCKED during auto-shoot to prevent servo position errors
+        // Manual mode: always allow switching modes.
         boolean aPressed = gamepad1.a || gamepad1.cross;
         if (aPressed && !prevA) {
-            if (robot.autoShoot != null && robot.autoShoot.isInProgress()) {
-                // Block mode switching during auto-shoot - would cause wrong servo positions
-                gamepad1.rumble(100);
-                telemetry.log().add("⚠️ Can't switch mode during auto-shoot!");
-            } else {
-                robot.autoIntake.toggleMode();
+            robot.autoIntake.toggleMode();
 
-                // Sync LED color and intake motor with mode
-                if (robot.autoIntake.isIntakeMode()) {
-                    robot.led.setIntakeModeColor();
-                    robot.autoIntake.startIntakeMotor(); // Start intake motor in intake mode
-                } else {
-                    robot.led.setLaunchModeColor();
-                    robot.autoIntake.stopIntakeMotor(); // Stop intake motor in launch mode
-                }
+            // Sync LED color and intake motor with mode
+            if (robot.autoIntake.isIntakeMode()) {
+                robot.led.setIntakeModeColor();
+                robot.autoIntake.startIntakeMotor(); // Start intake motor in intake mode
+            } else {
+                robot.led.setLaunchModeColor();
+                robot.autoIntake.stopIntakeMotor(); // Stop intake motor in launch mode
             }
         }
         prevA = aPressed;
@@ -456,10 +432,9 @@ public class DecodeTeleOp_Manual extends OpMode {
         // When color sensor is broken, driver uses this to manually tell the system
         // "a ball was loaded". Increments ballsLoaded + advances servo.
         // Hold GP1 Left Bumper + B to UNDO (retreat + decrement).
-        // Only works in INTAKE mode. BLOCKED during auto-shoot.
+        // Only works in INTAKE mode.
         boolean gp1BPressed = gamepad1.b || gamepad1.circle;
-        if (gp1BPressed && !prevGP1B && robot.autoIntake.isIntakeMode()
-                && (robot.autoShoot == null || !robot.autoShoot.isInProgress())) {
+        if (gp1BPressed && !prevGP1B && robot.autoIntake.isIntakeMode()) {
             if (gamepad1.left_bumper) {
                 // UNDO: retreat intake (decrement ball count)
                 if (robot.autoIntake.manualRetreatIntake()) {
@@ -478,22 +453,16 @@ public class DecodeTeleOp_Manual extends OpMode {
 
         // ========== MANUAL TURRET OVERRIDE (D-Pad Left/Right) ==========
         // D-Pad Left: Move to previous slot (servo reposition only, no ball count change)
-        // BLOCKED during auto-shoot to prevent interference with shooting sequence
         if (gamepad1.dpad_left && !prevDpadLeft) {
-            if (robot.autoShoot == null || !robot.autoShoot.isInProgress()) {
-                robot.autoIntake.moveToPreviousSlot();
-                telemetry.addLine("⬅️ Manual: Previous Slot");
-            }
+            robot.autoIntake.moveToPreviousSlot();
+            telemetry.addLine("⬅️ Manual: Previous Slot");
         }
         prevDpadLeft = gamepad1.dpad_left;
 
         // D-Pad Right: Move to next slot (manual advance)
-        // BLOCKED during auto-shoot to prevent interference with shooting sequence
         if (gamepad1.dpad_right && !prevDpadRight) {
-            if (robot.autoShoot == null || !robot.autoShoot.isInProgress()) {
-                robot.autoIntake.advanceToNextSlot();
-                telemetry.addLine("➡️ Manual: Next Slot");
-            }
+            robot.autoIntake.advanceToNextSlot();
+            telemetry.addLine("➡️ Manual: Next Slot");
         }
         prevDpadRight = gamepad1.dpad_right;
 
@@ -555,113 +524,14 @@ public class DecodeTeleOp_Manual extends OpMode {
         }
         prevGP2DpadDown = gamepad2.dpad_down;
 
-        // ========== GP2: TOGGLE AUTO-TURRET (X/Square Button) ==========
-        // Press X (Xbox) or Square (PS4) to toggle auto-turret tracking on/off
-        // Starts DISABLED - test in TurretTest first, then enable here
-        boolean gp2XPressed = gamepad2.x || gamepad2.square; // Support both Xbox and PS4
-        if (gp2XPressed && !prevGP2X && robot.autoTurret != null) {
-            autoTurretEnabled = !autoTurretEnabled;
-            if (autoTurretEnabled) {
-                robot.autoTurret.enableCombinedGoalTracking();
-                gamepad2.rumble(300);
-                telemetry.log().add("🎯 Goal Tracking ENABLED");
-            } else {
-                robot.autoTurret.disableCombinedGoalTracking();
-                gamepad2.rumble(100);
-                telemetry.log().add("⏹️ Auto-Turret DISABLED");
-            }
-        }
-        prevGP2X = gp2XPressed;
-
         // ========== GP2: TURRET MANUAL CONTROL (D-Pad Left/Right + Right Stick X) ==========
-        // Simple approach: if GP2 has manual input, we control the motor directly.
-        // autoTurret.update() was already SKIPPED in updateAllExceptTurret() above.
-        // When released, recalibrate so auto-turret resumes from the new position.
-        
-        if (hasManualInput) {
-            // ===== MANUAL INPUT ACTIVE =====
-            // autoTurret.update() was skipped - we have full control of the motor
-            turretManualOverride = true;
-            double manualPower = Math.abs(turretDpadInput) > 0.01 ? turretDpadInput : turretStickInput;
-            manualPower = enforceTurretLimitsForManual(manualPower);
-            if (robot.motors != null && robot.motors.turret != null) {
-                robot.motors.turret.setPower(manualPower);
-            }
-        } else if (turretManualOverride) {
-            // ===== JUST RELEASED MANUAL INPUT =====
-            // Stop the motor first
-            if (robot.motors != null && robot.motors.turret != null) {
-                robot.motors.turret.setPower(0);
-            }
-            // Recalibrate auto-turret to current position so it doesn't snap back
-            if (robot.autoTurret != null) {
-                robot.autoTurret.recalibratePosition();
-            }
-            turretManualOverride = false;
-            // Next loop: turretManualOverride is false → updateAll() runs → auto-turret resumes
+        double manualPower = Math.abs(turretDpadInput) > 0.01 ? turretDpadInput : turretStickInput;
+        manualPower = enforceTurretLimitsForManual(manualPower);
+        if (robot.motors != null && robot.motors.turret != null) {
+            robot.motors.turret.setPower(manualPower);
         }
-        // If no manual input and not overriding: auto-turret handles motor via updateAll()
 
-        // ========== GP2: RECALIBRATE TURRET POSITION (Left Bumper) ==========
-        // When you've manually aimed to the correct position, press Left Bumper to
-        // tell the system "this is correct" - fixes any tracking drift/error
-        boolean gp2LeftBumperPressed = gamepad2.left_bumper;
-        if (gp2LeftBumperPressed && !prevGP2LeftBumper && robot.autoTurret != null) {
-            robot.autoTurret.recalibratePosition();
-            lastCalibrationStatus = "Manual (LB)";
-            telemetry.addLine("✅ Turret RECALIBRATED - Position locked as reference!");
-        }
-        prevGP2LeftBumper = gp2LeftBumperPressed;
-
-        // ========== GP2: LIMELIGHT CALIBRATION (Right Bumper) ==========
-        // Press Right Bumper to trigger Limelight-based calibration (when AprilTag visible)
-        boolean gp2RightBumperPressed = gamepad2.right_bumper;
-        if (gp2RightBumperPressed && !prevGP2RightBumper) {
-            performLimelightCalibration(true); // true = manual trigger
-        }
-        prevGP2RightBumper = gp2RightBumperPressed;
-
-        // ========== GP2: TOGGLE AUTO-CALIBRATION (Y/Triangle Button) ==========
-        // Press Y (Xbox) or Triangle (PS4) to toggle automatic Limelight calibration on/off
-        boolean gp2YPressed = gamepad2.y || gamepad2.triangle; // Support both Xbox and PS4
-        if (gp2YPressed && !prevGP2Y) {
-            autoCalibrationEnabled = !autoCalibrationEnabled;
-            // Rumble feedback for toggle
-            gamepad2.rumble(autoCalibrationEnabled ? 200 : 100);
-        }
-        prevGP2Y = gp2YPressed;
-
-        // ========== GP2: FULL LIMELIGHT RESET (A/Cross Button) ==========
-        // During match: corrects position from Limelight AND clears manual turret offset.
-        // Use this when Limelight can see the tag and you want to fully trust it.
-        // After this, auto-tracking recalculates purely from the corrected position.
-        boolean gp2APressed = gamepad2.a || gamepad2.cross;
-        if (gp2APressed && !prevGP2A) {
-            if (robot.limelight != null && robot.limelight.hasAllianceTarget()) {
-                // 1. Correct position (X, Y only, keep heading)
-                Pose limelightPose = robot.limelight.getRobotPoseFromAprilTag();
-                if (limelightPose != null && robot.localization != null) {
-                    robot.localization.calibratePositionOnly(limelightPose);
-                }
-                // 2. Clear manual offset — trust auto-tracking from corrected position
-                if (robot.autoTurret != null) {
-                    robot.autoTurret.clearManualOffset();
-                }
-                lastCalibrationStatus = "Full Reset (A)";
-                gamepad2.rumble(400);
-                telemetry.log().add("✅ FULL RESET: Position corrected + offset cleared");
-            } else {
-                gamepad2.rumble(100);
-                telemetry.log().add("❌ No AprilTag visible - cannot reset");
-            }
-        }
-        prevGP2A = gp2APressed;
-
-        // ========== AUTOMATIC LIMELIGHT CALIBRATION ==========
-        // Auto-calibrate when conditions are good
-        if (autoCalibrationEnabled && !turretManualOverride) {
-            performAutoCalibration();
-        }
+        // Manual mode: auto turret calibration/reset controls are disabled.
 
         // ========== GP1 Y/TRIANGLE: HARD TURRET RESET ==========
         // User physically moves turret to center, then presses Y.
@@ -669,7 +539,6 @@ public class DecodeTeleOp_Manual extends OpMode {
         boolean gp1YPressed = gamepad1.y || gamepad1.triangle;
         if (gp1YPressed && !prevGP1Y && robot.autoTurret != null) {
             robot.autoTurret.hardReset();
-            robot.autoTurret.enableCombinedGoalTracking();
             // Clear saved offset so it doesn't get restored
             RobotMotors.clearSavedTurretOffset();
             gamepad1.rumble(500);
@@ -714,10 +583,10 @@ public class DecodeTeleOp_Manual extends OpMode {
         }
 
         // ========== MANUAL BALL LAUNCH (Right Trigger) ==========
-        // Right Trigger: Manual ball push servo control (only in launch mode AND when auto-shoot is NOT active)
+        // Right Trigger: Manual ball push servo control (only in launch mode)
         // Tracks push-release cycle to decrement ballsLoaded (squeeze past 0.7, release below 0.3 = 1 ball shot)
         if (robot.servos != null && robot.servos.ballpush_4 != null) {
-            if (!robot.autoIntake.isIntakeMode() && !robot.autoShoot.isInProgress()) {
+            if (!robot.autoIntake.isIntakeMode()) {
                 // Map trigger (0.0 to 1.0) to servo offset (0.0 to 0.27)
                 double triggerValue = gamepad1.right_trigger;
                 double servoOffset = triggerValue * 0.27;
@@ -742,37 +611,18 @@ public class DecodeTeleOp_Manual extends OpMode {
                         telemetry.log().add("🔫 Manual Shot! Balls=" + robot.autoIntake.getBallsLoaded());
                     }
                 }
-            } else if (robot.autoIntake.isIntakeMode() && !robot.autoShoot.isInProgress()) {
-                // In intake mode AND auto-shoot not active, keep ball push servo at initial position
+            } else {
+                // In intake mode, keep ball push servo at initial position
                 robot.servos.ballpush_4.setPosition(robot.servos.ballpush_initial_position);
                 manualPushActive = false; // Reset tracking when not in launch mode
-            } else {
-                // Auto-shoot IS active - don't touch the servo, let AutoShootSystem control it
-                manualPushActive = false; // Reset tracking during auto-shoot
             }
         }
-
-        // ========== AUTO-SHOOT ==========
-        // Right Bumper: Start auto-shooting sequence
-        // Support both controller types
-        boolean rightBumperPressed = gamepad1.right_bumper;
-        if (rightBumperPressed && !prevRightBumper) {
-            // Only shoot if in launch mode, not already shooting, and have balls loaded
-            if (!robot.autoIntake.isIntakeMode() && !robot.autoShoot.isInProgress()) {
-                // Use actual ball count (detected by sensor), not servo position
-                int ballsToShoot = robot.autoIntake.getBallsLoaded();
-                // Validate: must have at least 1 ball to shoot
-                if (ballsToShoot > 0 && ballsToShoot <= 3) {
-                    robot.autoShoot.start(ballsToShoot);
-                }
-            }
-        }
-        prevRightBumper = rightBumperPressed;
 
         // ========== READY TO SHOOT RUMBLE ==========
         // Rumble when system becomes ready to shoot (turret on target + shooter at speed)
-        boolean isReadyToShoot = robot.isReadyToShoot() && 
-            (robot.autoIntake == null || !robot.autoIntake.isIntakeMode());
+        boolean isReadyToShoot = robot.shooting != null
+            && robot.shooting.isShooterAtTargetVelocity()
+            && (robot.autoIntake == null || !robot.autoIntake.isIntakeMode());
         if (isReadyToShoot && !wasReadyToShoot) {
             // Just became ready - double pulse rumble to signal "ready!"
             gamepad1.rumbleBlips(2);
@@ -780,15 +630,7 @@ public class DecodeTeleOp_Manual extends OpMode {
         }
         wasReadyToShoot = isReadyToShoot;
         
-        // ========== TURRET AT LIMIT WARNING ==========
-        // Warn driver when turret hits rotation limit (goal behind robot)
-        boolean turretAtLimit = autoTurretEnabled && 
-            robot.autoTurret != null && robot.autoTurret.isAtLimit();
-        if (turretAtLimit && !wasTurretAtLimit) {
-            // Just hit limit - long rumble to warn driver to rotate robot
-            gamepad1.rumble(500); // 500ms warning
-        }
-        wasTurretAtLimit = turretAtLimit;
+        // Auto-turret limit warnings are disabled in manual-only turret mode.
 
         // ========== TELEMETRY ==========
         updateTelemetry();
@@ -1019,13 +861,6 @@ public class DecodeTeleOp_Manual extends OpMode {
         // Turret Slot
         telemetry.addData("Balls Loaded", robot.autoIntake.getBallsLoaded());
 
-        // Auto-Shoot Status (only if active)
-        if (robot.autoShoot.isInProgress()) {
-            telemetry.addLine();
-            telemetry.addLine("🎯 AUTO-SHOOTING!");
-            telemetry.addData("Progress", robot.autoShoot.getBallsShot() + "/" + robot.autoShoot.getBallsToShoot());
-        }
-
         // Shooter
         telemetry.addLine();
         telemetry.addData("Shooter", "%.0f/%.0f %s", 
@@ -1033,23 +868,11 @@ public class DecodeTeleOp_Manual extends OpMode {
             currentShooterVelocity,
             robot.shooting.isShooterAtTargetVelocity() ? "✓" : "⏳");
 
-        // Turret (with launch-mode-only info and limit warning)
-        String turretStatus;
-        if (!autoTurretEnabled) {
-            turretStatus = "MANUAL";
-        } else if (turretManualOverride) {
-            turretStatus = "OVERRIDE";
-        } else if (!robot.autoTurret.isMovementAllowed()) {
-            // In intake mode with launch-mode-only enabled - show tracking but not moving
-            double pendingMove = robot.autoTurret.getPendingMovementDegrees();
-            turretStatus = String.format("TRACKING (→%.0f° on LAUNCH)", pendingMove);
-        } else if (robot.autoTurret.isAtLimit()) {
-            // Goal is behind robot - turret at max rotation
-            turretStatus = "⚠️ AT LIMIT (rotate robot!)";
-        } else {
-            turretStatus = robot.autoTurret.isOnTarget() ? "ON TARGET" : "Tracking...";
-        }
-        telemetry.addData("Turret", "%.0f° %s", robot.autoTurret.getTurretAngle(), turretStatus);
+        // Turret (manual-only)
+        double turretAngle = (robot.motors != null && robot.motors.turret != null)
+            ? robot.motors.turret.getCurrentPosition() / RobotConstants.Turret.TICKS_PER_DEGREE
+            : 0;
+        telemetry.addData("Turret", "%.0f° MANUAL", turretAngle);
 
         // Hood
         String hoodMode = isHoodCustomPosition ? "CUSTOM" : HOOD_POSITION_NAMES[currentHoodIndex];
@@ -1072,16 +895,7 @@ public class DecodeTeleOp_Manual extends OpMode {
 
         // Feature Toggles (compact)
         telemetry.addLine();
-        String turretModeStr;
-        if (!autoTurretEnabled) {
-            turretModeStr = "Turret:OFF";
-        } else {
-            String goal = (robot.autoTurret != null && robot.autoTurret.getGoalX() > 70) ? "RED" : "BLUE";
-            turretModeStr = "Turret:GOAL(" + goal + ")";
-        }
-        telemetry.addData("Features", 
-            turretModeStr + " | " +
-            (autoCalibrationEnabled ? "AutoCal:ON" : "AutoCal:OFF"));
+        telemetry.addData("Features", "Turret:MANUAL | AutoShoot:OFF");
     }
 
     /**
@@ -1148,7 +962,7 @@ public class DecodeTeleOp_Manual extends OpMode {
         telemetry.addData("A/Cross", "Toggle Mode");
         telemetry.addData("B/○", "Manual Ball +1 (sensor broken)");
         telemetry.addData("LB+B", "Manual Ball Undo -1");
-        telemetry.addData("R Bumper", "Auto-Shoot");
+        telemetry.addData("R Bumper", "Not used (Auto-Shoot OFF)");
         telemetry.addData("D-Pad U/D", "Hood Preset");
         telemetry.addData("D-Pad L/R", "Manual Turret");
         telemetry.addData("L Trigger", "Hold = HIGH Velocity");
@@ -1159,16 +973,16 @@ public class DecodeTeleOp_Manual extends OpMode {
         telemetry.addLine("─── GP2 (OPERATOR) ───");
         String allianceStr = robot.limelight != null ? 
             (robot.limelight.getAlliance() == LimelightManager.Alliance.BLUE ? "BLUE" : "RED") : "N/A";
-        telemetry.addData("A/×", allianceStr + " | Full LL Reset");
-        telemetry.addData("X/□", autoTurretEnabled ? "Turret: GOAL-TRACK" : "Turret: OFF");
-        telemetry.addData("Y/△", autoCalibrationEnabled ? "AutoCal: ON" : "AutoCal: OFF");
+        telemetry.addData("A/×", allianceStr + " | Alliance Toggle");
+        telemetry.addData("X/□", "Not used (Auto-Turret OFF)");
+        telemetry.addData("Y/△", "Not used (Auto-Cal OFF)");
         telemetry.addData("L Trigger", "HOLD = Position Lock 🔒");
         telemetry.addData("L Stick Y", "Intake Control");
         telemetry.addData("R Stick X", "Turret Manual");
         telemetry.addData("D-Pad U/D", "Hood Fine");
         telemetry.addData("D-Pad L/R", "Turret Fine");
-        telemetry.addData("L Bumper", "Recalibrate");
-        telemetry.addData("R Bumper", "Limelight Cal (keep offset)");
+        telemetry.addData("L Bumper", "Turret Manual (fine)");
+        telemetry.addData("R Bumper", "Turret Manual (fine)");
         telemetry.addData("Back/Share", "Next Page");
 
         telemetry.addLine();
